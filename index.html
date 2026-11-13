@@ -1,0 +1,1913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C-Sawe Library</title>
+<meta name="description" content="Caleb Kipchirchir (C-Sawe): a 3D study where every book on the shelf is one of my GitHub repositories.">
+<style>
+/* Layout idea: the room is the page. Everything else is a small glass control floating
+   over it, and each control opens one overlay: a centred pop-up on wide screens, a
+   bottom sheet on narrow ones. Tokens and type follow the thesis dashboard's rules. */
+:root{
+  --bg:#F2F2F7;                 /* grouped background */
+  --card:rgba(255,255,255,.74); /* glass */
+  --card-solid:#FFFFFF;
+  --ink:#1C1C1E; --ink-2:#48484D; --ink-3:#6C6C72;
+  --hair:rgba(60,60,67,.2);
+  --accent:#007AFF;
+  --good:#34C759; --warn:#FF9500; --critical:#FF3B30;   /* reserved for status */
+  --room:#DDD3BD;               /* plaster behind the 3D scene */
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 12px 32px -12px rgba(0,0,0,.18);
+  --font:system-ui,-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --spring:cubic-bezier(.2,.9,.25,1);
+  --r-card:26px; --r-group:18px; --r-small:12px;
+  --stage-h:clamp(430px,70vh,700px);
+  --side:216px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#000000; --card:rgba(28,28,30,.74); --card-solid:#1C1C1E;
+    --ink:#FFFFFF; --ink-2:#C7C7CC; --ink-3:#98989F;
+    --hair:rgba(120,120,128,.36);
+    --accent:#0A84FF; --good:#30D158; --warn:#FF9F0A; --critical:#FF453A;
+    --room:#15130F;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px -12px rgba(0,0,0,.8);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#000000; --card:rgba(28,28,30,.74); --card-solid:#1C1C1E;
+  --ink:#FFFFFF; --ink-2:#C7C7CC; --ink-3:#98989F;
+  --hair:rgba(120,120,128,.36);
+  --accent:#0A84FF; --good:#30D158; --warn:#FF9F0A; --critical:#FF453A;
+  --room:#15130F;
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px -12px rgba(0,0,0,.8);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;overflow:hidden;background:var(--room);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5;font-weight:500;letter-spacing:-.02em;-webkit-tap-highlight-color:transparent}
+a{color:var(--accent);text-decoration:none}
+@media (hover:hover){a:hover{text-decoration:underline}}
+button,input{font:inherit;letter-spacing:inherit;color:inherit}
+:focus-visible{outline:2.5px solid var(--accent);outline-offset:2px;border-radius:6px}
+h1,h2,h3,p{margin:0}
+dl{margin:0}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);letter-spacing:0;font-size:.92em}
+.key{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.card{background:var(--card);-webkit-backdrop-filter:saturate(180%) blur(28px);backdrop-filter:saturate(180%) blur(28px);border:.5px solid var(--hair);box-shadow:var(--shadow)}
+.btn{background:color-mix(in srgb,var(--ink) 7%,transparent);border:0;border-radius:var(--r-group);min-height:34px;padding:6px 14px;font-weight:600;font-size:13.5px;cursor:pointer;transition:transform 220ms var(--spring),background-color 160ms ease}
+.btn:active{transform:scale(.95)}
+@media (hover:hover){.btn:hover{background:color-mix(in srgb,var(--ink) 12%,transparent)}}
+.btn.primary{background:var(--accent);color:#fff}
+@media (hover:hover){.btn.primary:hover{background:color-mix(in srgb,var(--accent) 88%,#000)}}
+.btn.icon{width:34px;padding:0;display:inline-grid;place-items:center;font-size:17px;line-height:1}
+
+/* the room */
+#stage{position:fixed;inset:0}
+#room{display:block;width:100%;height:100%;touch-action:none;cursor:grab;outline-offset:-5px}
+#room.is-hot{cursor:pointer}
+#room.is-drag{cursor:grabbing}
+.no3d{display:none;position:absolute;inset:0;place-content:center;text-align:center;color:var(--ink-2);padding:24px}
+#stage.is-flat #room{display:none}
+#stage.is-flat .no3d{display:grid}
+
+/* floating controls */
+.brand{position:fixed;z-index:20;left:14px;top:max(14px,env(safe-area-inset-top));padding:8px 14px 9px;border-radius:var(--r-group);line-height:1.25}
+.brand h1{font-size:15px;font-weight:700}
+.tools{position:fixed;z-index:20;right:14px;top:max(14px,env(safe-area-inset-top));display:flex;gap:8px;align-items:center}
+.seg{display:flex;gap:2px;padding:3px;border-radius:999px}
+.seg button,.mode{border:0;background:transparent;border-radius:999px;min-height:30px;padding:4px 12px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:transform 220ms var(--spring),background-color 160ms ease}
+.seg button:active,.mode:active{transform:scale(.94)}
+.seg button[aria-pressed="true"]{background:var(--card-solid);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
+.mode{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px 4px 9px;min-height:36px;color:var(--ink)}
+.dock{position:fixed;z-index:20;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:2px;padding:6px;border-radius:var(--r-card)}
+.dock button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:70px;min-height:48px;padding:6px 8px 5px;border:0;background:transparent;border-radius:var(--r-group);font-size:10.5px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:transform 220ms var(--spring),background-color 160ms ease,color 160ms ease}
+.dock button:active{transform:scale(.94)}
+.dock button[aria-pressed="true"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.dock svg{width:22px;height:22px}
+@media (hover:hover){.dock button:hover{color:var(--ink)}.dock button[aria-pressed="true"]:hover{color:var(--accent)}}
+.caption,.deskbar{position:fixed;z-index:19;left:50%;bottom:calc(max(14px,env(safe-area-inset-bottom)) + 72px);transform:translateX(-50%);max-width:min(92vw,620px)}
+.caption{padding:5px 14px 6px;border-radius:999px;font-size:12.5px;color:var(--ink-2);text-align:center;pointer-events:none;transition:opacity 200ms ease}
+.caption b{font-weight:700;color:var(--ink);margin-right:6px}
+.deskbar{width:min(92vw,560px);display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-group);opacity:0;visibility:hidden;transition:opacity 240ms var(--spring),visibility 0s linear 240ms}
+.deskbar.is-on{opacity:1;visibility:visible;transition-delay:0s}
+.deskbar.is-on ~ .caption{opacity:0}
+.deskbar .what{flex:1;min-width:0}
+.deskbar .what b{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deskbar .what span{display:block;font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.has-sheet .caption,body.has-sheet .deskbar{opacity:0;visibility:hidden}
+
+/* overlays: sheet on narrow screens, pop-up or side card on wide ones */
+.scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.24);opacity:0;visibility:hidden;transition:opacity 240ms ease,visibility 0s linear 240ms}
+.scrim.is-on{opacity:1;visibility:visible;transition-delay:0s}
+.panel{position:fixed;z-index:35;left:0;right:0;bottom:0;max-height:86vh;display:flex;flex-direction:column;border-radius:var(--r-card) var(--r-card) 0 0;border-bottom:0;visibility:hidden;transform:translateY(104%);transition:transform 420ms var(--spring),visibility 0s linear 420ms}
+.panel.side{max-height:58vh}
+.panel.is-open{visibility:visible;transform:none;transition-delay:0s}
+.panel.is-dragging{transition:none}
+.grab{display:grid;place-items:center;border:0;background:transparent;height:26px;cursor:grab;touch-action:none;flex:none;border-radius:var(--r-card) var(--r-card) 0 0}
+.grab::before{content:"";width:38px;height:5px;border-radius:99px;background:var(--ink-3);opacity:.55}
+.panel-scroll{overflow:auto;overscroll-behavior:contain;padding:0 18px max(20px,env(safe-area-inset-bottom))}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+/* quiet scrollbars: thin, rounded, kept clear of the card's corners, visible on hover or while scrolling */
+.panel-scroll{scrollbar-width:thin;scrollbar-color:transparent transparent;transition:scrollbar-color 200ms ease}
+.panel-scroll:hover,.panel-scroll:focus-within{scrollbar-color:color-mix(in srgb,var(--ink) 28%,transparent) transparent}
+.panel-scroll::-webkit-scrollbar{width:12px}
+.panel-scroll::-webkit-scrollbar-track{background:transparent;margin:14px 0}
+.panel-scroll::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 0%,transparent);border-radius:99px;border:4px solid transparent;background-clip:content-box;min-height:44px}
+.panel-scroll:hover::-webkit-scrollbar-thumb,.panel-scroll:focus-within::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink) 26%,transparent)}
+.panel-scroll::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 42%,transparent)}
+.panel-scroll::-webkit-scrollbar-thumb:active{background-color:color-mix(in srgb,var(--ink) 55%,transparent)}
+.panel-scroll::-webkit-scrollbar-button,.panel-scroll::-webkit-scrollbar-corner{display:none}
+.panel-title{font-size:26px;font-weight:700;line-height:1.15;letter-spacing:-.025em;outline:none}
+.lede{color:var(--ink-2);max-width:68ch;margin-top:6px}
+@media (min-width:900px){
+  .panel{left:50%;right:auto;top:50%;bottom:auto;width:min(780px,92vw);max-height:min(84vh,780px);border-radius:var(--r-card);border-bottom:.5px solid var(--hair);opacity:0;transform:translate(-50%,calc(-50% + 6px));transition:opacity 260ms var(--spring),transform 260ms var(--spring),visibility 0s linear 260ms}
+  .panel.is-open{opacity:1;transform:translate(-50%,-50%)}
+  .panel.side{left:auto;right:16px;top:16px;bottom:16px;width:min(430px,44vw);max-height:none;transform:translateY(6px)}
+  .panel.side.is-open{transform:none}
+  .grab{display:none}
+  .panel-scroll{padding:16px 14px 18px 22px;margin:4px 4px 4px 0;scrollbar-gutter:stable}
+}
+
+/* inside the overlays */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));margin-top:14px;border-radius:var(--r-group);background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.strip div{padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.strip dd{margin:0;font-size:15px;font-weight:700}
+.strip dd small{font-size:12.5px;font-weight:500;color:var(--ink-3)}
+.reader-top{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap}
+.reader-top .btn{margin-left:auto}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border-radius:999px;padding:2px 10px 2px 8px;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-2)}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.pill[data-kind="live"]{background:color-mix(in srgb,var(--good) 16%,transparent);color:color-mix(in srgb,var(--good) 45%,var(--ink))}
+.pill[data-kind="live"]::before{background:var(--good)}
+.pill[data-kind="wip"]{background:color-mix(in srgb,var(--warn) 18%,transparent);color:color-mix(in srgb,var(--warn) 45%,var(--ink))}
+.pill[data-kind="wip"]::before{background:var(--warn)}
+.when{font-size:12.5px;color:var(--ink-3)}
+.reader h2{font-size:26px;font-weight:700;line-height:1.12;letter-spacing:-.025em;margin-top:12px;outline:none}
+.reader .sub{color:var(--ink-2);margin-top:4px}
+.reader .body{margin-top:12px;max-width:66ch}
+.reader h3{font-size:15px;font-weight:700;margin:18px 0 4px}
+.reader ul{margin:0;padding-left:1.15em;max-width:66ch}
+.reader li{margin:4px 0}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:0;margin-top:14px;border-radius:var(--r-group);background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.facts div{display:flex;flex-direction:column;gap:2px;padding:10px 12px;min-width:0}
+.facts dd{margin:0;font-size:19px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.figure{margin-top:14px}
+.pipe{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;counter-reset:step}
+.pipe li{border:.5px solid var(--hair);background:color-mix(in srgb,var(--ink) 4%,transparent);border-radius:var(--r-small);padding:7px 10px 9px;counter-increment:step;min-width:0}
+.pipe li::before{content:counter(step);display:block;font-size:10.5px;font-weight:700;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.pipe b,.loop b{display:block;font-weight:700;line-height:1.2}
+.pipe span,.loop span{display:block;font-size:12.5px;line-height:1.35;color:var(--ink-2);margin-top:2px}
+.loop{margin-top:8px;border:1px dashed var(--ink-3);border-radius:var(--r-small);padding:8px 11px 10px}
+.gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 10px;margin-top:14px}
+.gallery figure{margin:0;min-width:0}
+.gallery figure:first-child{grid-column:1 / -1}
+.gallery figcaption{font-size:12.5px;color:var(--ink-2);line-height:1.35;margin-top:4px}
+.shot{display:block;width:100%;padding:0;border:.5px solid var(--hair);border-radius:var(--r-small);overflow:hidden;background:#fff;cursor:zoom-in;transition:transform 220ms var(--spring)}
+.shot img{display:block;width:100%;height:auto}
+.shot:active{transform:scale(.98)}
+.empty{margin-top:14px;font-size:13px;color:var(--ink-3);border:1px dashed var(--hair);border-radius:var(--r-small);padding:10px 12px}
+.made{margin-top:14px;color:var(--ink-2);font-size:13px;max-width:66ch}
+.links{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:13.5px}
+.reader-foot{display:flex;justify-content:space-between;gap:10px;margin-top:16px;padding-top:12px;border-top:.5px solid var(--hair)}
+
+.group{margin-top:14px;padding:6px 0}
+.group > h2{padding:10px 18px 6px}
+.rows{list-style:none;margin:0;padding:0}
+.rows li + li{border-top:.5px solid var(--hair)}
+.row{display:grid;grid-template-columns:4.6em minmax(0,1fr) auto;gap:4px 14px;align-items:baseline;width:100%;text-align:left;background:transparent;border:0;padding:11px 18px 12px;cursor:pointer;transition:background-color 140ms ease}
+.row:active{background:color-mix(in srgb,var(--ink) 7%,transparent)}
+@media (hover:hover){.row:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}}
+.rows li:last-child .row{border-radius:0 0 var(--r-card) var(--r-card)}
+.row .no{font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.row .ti{font-weight:700}
+.row .bl{display:block;font-weight:500;color:var(--ink-2);font-size:13.5px;margin-top:1px}
+.row .meta{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+@media (max-width:620px){.row{grid-template-columns:minmax(0,1fr)}.row .meta{flex-direction:row;align-items:center;gap:8px}}
+.cols{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-top:14px}
+@media (min-width:900px){.cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pad{padding:18px 20px 20px}
+.pad h2{font-size:15px;font-weight:700}
+.pad p{color:var(--ink-2);margin-top:8px;max-width:66ch}
+.pad ul{margin:8px 0 0;padding-left:1.15em;color:var(--ink-2)}
+.pad li{margin:4px 0}
+.contact-list{list-style:none;margin:8px 0 0;padding:0}
+.contact-list li{display:flex;flex-direction:column;gap:1px;padding:10px 0}
+.contact-list li + li{border-top:.5px solid var(--hair)}
+
+
+.group{background:color-mix(in srgb,var(--ink) 4%,transparent);border-radius:var(--r-group)}
+.rows li:last-child .row{border-radius:0 0 var(--r-group) var(--r-group)}
+.pad{background:color-mix(in srgb,var(--ink) 4%,transparent);border-radius:var(--r-group)}
+@media (min-width:900px){.pipe{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* ask the study */
+.ask-form{display:flex;gap:8px;margin-top:14px}
+.ask-form input{flex:1;min-width:0;min-height:46px;border-radius:var(--r-group);border:.5px solid var(--hair);background:var(--card-solid);padding:8px 14px;font-size:15px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{border:0;border-radius:999px;background:color-mix(in srgb,var(--ink) 7%,transparent);padding:5px 12px;min-height:30px;font-size:13px;font-weight:600;cursor:pointer;transition:transform 220ms var(--spring)}
+.chip:active{transform:scale(.95)}
+.steps{list-style:none;margin:14px 0 0;padding:0;font-size:13px;color:var(--ink-2)}
+.steps li{display:flex;gap:8px;align-items:baseline;padding:2px 0}
+.steps .mk{width:1.1em;text-align:center;font-weight:700;color:var(--ink)}
+.steps li[data-state="busy"] .mk{animation:spin 900ms linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.answer{margin-top:12px;white-space:pre-wrap;max-width:66ch}
+.answer:empty{display:none}
+.ask-note{margin-top:14px;font-size:12.5px;color:var(--ink-3)}
+.error{margin-top:12px;border-radius:var(--r-small);padding:9px 12px;font-size:13.5px;background:color-mix(in srgb,var(--critical) 13%,transparent);color:color-mix(in srgb,var(--critical) 45%,var(--ink))}
+
+/* screenshot viewer */
+.lightbox{position:fixed;inset:0;z-index:50;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:10px;padding:clamp(12px,3vw,32px);background:rgba(0,0,0,.86);color:#fff;opacity:0;visibility:hidden;transition:opacity 220ms var(--spring),visibility 0s linear 220ms}
+.lightbox.is-open{opacity:1;visibility:visible;transition-delay:0s}
+.lightbox figure{margin:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:8px;justify-items:center;transform:translateY(6px);transition:transform 260ms var(--spring)}
+.lightbox.is-open figure{transform:none}
+.lightbox img{width:auto;height:auto;max-width:100%;max-height:100%;min-height:0;object-fit:contain;background:#fff;border-radius:var(--r-small);align-self:center}
+.lightbox figcaption{font-size:13.5px;text-align:center;max-width:70ch}
+.lb-bar{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums;font-size:13px}
+.lightbox .btn{background:rgba(255,255,255,.16);color:#fff}
+.lightbox :focus-visible{outline-color:#fff}
+
+
+@media (max-width:560px){
+  .brand h1{font-size:13.5px}
+  .seg button{padding:4px 9px}
+  .mode span{display:none}.mode{padding:4px 9px}
+  .dock button{min-width:62px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0s !important;transition-delay:0s !important}
+  .steps li[data-state="busy"] .mk{animation:none}
+  .btn:active,.dock button:active,.seg button:active,.shot:active,.chip:active,.mode:active{transform:none}
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="room" role="img" aria-label="A Japanese-style study that fills the page: a wooden bookcase of sixteen books, a desk with two monitors, a window, a framed portrait, three ink scrolls including the Kenyan flag, a paper lantern, a small desk robot, and a cat riding a robot vacuum. The Catalogue button lists the same books as text."></canvas>
+  <p class="no3d">The 3D study needs WebGL, which this browser has switched off. The Catalogue button below lists every book.</p>
+</div>
+
+<header class="brand card"><h1>Caleb Kipchirchir</h1><div class="key">C-Sawe's study</div></header>
+<div class="tools">
+  <div class="seg card" role="group" aria-label="Where to look" id="seg">
+    <button type="button" data-view="room" aria-pressed="false">Room</button>
+    <button type="button" data-view="shelf" aria-pressed="false">Shelf</button>
+    <button type="button" data-view="desk" aria-pressed="false">Desk</button>
+  </div>
+  <button class="mode card" id="mode" type="button"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.8a8.2 8.2 0 0 1 0 16.4z" fill="currentColor"/></svg><span id="mode-label">Auto</span></button>
+</div>
+
+<div class="deskbar card" id="deskbar">
+  <button class="btn icon" id="slide-prev" type="button" aria-label="Previous project">‹</button>
+  <div class="what"><b id="slide-title"></b><span id="slide-cap"></span></div>
+  <button class="btn icon" id="slide-next" type="button" aria-label="Next project">›</button>
+  <button class="btn primary" id="slide-open" type="button">Open book</button>
+</div>
+<p class="caption card" id="caption"></p>
+
+<nav class="dock card" aria-label="Open">
+  <button type="button" data-panel="catalogue" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Catalogue</button>
+  <button type="button" data-panel="about" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/></svg>About</button>
+  <button type="button" data-panel="contact" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M4 7.5l8 6 8-6"/></svg>Contact</button>
+  <button type="button" data-panel="ask" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 8V4.5M9.3 12.6v1.2M14.7 12.6v1.2"/><circle cx="12" cy="3.6" r="1" fill="currentColor"/></svg>Ask</button>
+</nav>
+
+<div class="scrim" id="scrim"></div>
+
+<section class="panel card" id="panel-catalogue" role="dialog" aria-modal="true" aria-labelledby="t-catalogue" aria-hidden="true">
+  <button class="grab" type="button" aria-label="Close"></button>
+  <div class="panel-scroll">
+    <div class="panel-head"><h2 class="panel-title" id="t-catalogue" tabindex="-1">Catalogue</h2><button class="btn" type="button" data-close>Close</button></div>
+    <p class="lede">Every book in the room as a list, labelled with Dewey Decimal classes. Choosing one takes it off the shelf.</p>
+    <dl class="strip" id="strip"></dl>
+    <div id="groups"></div>
+  </div>
+</section>
+
+<section class="panel card" id="panel-about" role="dialog" aria-modal="true" aria-labelledby="t-about" aria-hidden="true">
+  <button class="grab" type="button" aria-label="Close"></button>
+  <div class="panel-scroll">
+    <div class="panel-head"><h2 class="panel-title" id="t-about" tabindex="-1">About</h2><button class="btn" type="button" data-close>Close</button></div>
+    <p class="lede">I'm Caleb Kipchirchir. On GitHub I'm C-Sawe. I'm a final-year Informatics and Computer Science student at Strathmore University in Nairobi, and I work on the gap between a model that runs in a notebook and a system that keeps running in production.</p>
+    <div class="cols">
+      <div class="pad"><h2>What I do</h2><ul>
+        <li>Applied reinforcement learning and MLOps: PPO agents, drift detection and automated retraining.</li>
+        <li>Automation and AI agents: WhatsApp agents on language models, and n8n workflows.</li>
+        <li>Back ends in Python (FastAPI, Flask), PHP (Laravel) and Node, on PostgreSQL and MySQL.</li>
+        <li>Front ends in React and Vue, with deck.gl or Three.js when the data is spatial.</li></ul></div>
+      <div class="pad"><h2>Outside the degree</h2><ul>
+        <li>I run Mosop Farm Inputs, a farm supply business in Uasin Gishu with a branch in Nandi Hills, and I write its software.</li>
+        <li>I founded Nexatech, which builds WhatsApp automation for lenders, SACCOs and small businesses.</li></ul></div>
+      <div class="pad"><h2>What in this room is automated</h2><ul>
+        <li>The robot on the desk answers questions about the shelf with an AI model, and pulls out the books it cites.</li>
+        <li>The tall monitor replays an example run of two things I build: a WhatsApp agent and a retraining loop. It is not live data.</li>
+        <li>The window follows your local time: a day sky by day, tonight's moon phase after dark.</li>
+        <li>The robot vacuum does its rounds on its own, usually with the cat on board.</li></ul></div>
+      <div class="pad"><h2>How this page is designed</h2><ul>
+        <li>Nothing is invented. Every figure comes from a repository, and a book without screenshots says so.</li>
+        <li>Green and orange mean status only, and every status also has a text label.</li>
+        <li>System font, tabular numerals, one small type scale.</li>
+        <li>Motion is spring-based and switches off under reduced motion.</li>
+        <li>The three scrolls are original ink studies drawn in code: the Kenyan flag over an acacia, a run of candlesticks and a mountain at sunrise.</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel card" id="panel-contact" role="dialog" aria-modal="true" aria-labelledby="t-contact" aria-hidden="true">
+  <button class="grab" type="button" aria-label="Close"></button>
+  <div class="panel-scroll">
+    <div class="panel-head"><h2 class="panel-title" id="t-contact" tabindex="-1">Contact</h2><button class="btn" type="button" data-close>Close</button></div>
+    <p class="lede">I'm open to research collaborations in quantitative reinforcement learning and MLOps, conversations about resilient back-end systems, and software or AI engineering roles.</p>
+    <ul class="contact-list">
+      <li><span class="key">Email</span><a href="mailto:caleb.Kipchirchir@strathmore.edu">caleb.Kipchirchir@strathmore.edu</a></li>
+      <li><span class="key">LinkedIn</span><a href="https://www.linkedin.com/in/caleb-kipchirchir-8582b8397/" target="_blank" rel="noopener">Caleb Kipchirchir</a></li>
+      <li><span class="key">GitHub</span><a class="mono" href="https://github.com/C-Sawe" target="_blank" rel="noopener">github.com/C-Sawe</a></li>
+      <li><span class="key">Based in</span><span>Nairobi and Eldoret, Kenya</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="panel side card" id="panel-ask" role="dialog" aria-labelledby="t-ask" aria-hidden="true">
+  <button class="grab" type="button" aria-label="Close"></button>
+  <div class="panel-scroll">
+    <div class="panel-head"><h2 class="panel-title" id="t-ask" tabindex="-1">Ask the study</h2><button class="btn" type="button" data-close>Close</button></div>
+    <p class="lede">Ask about my work. The desk robot searches the shelf, pulls out the books that match, and answers from them.</p>
+    <form class="ask-form" id="ask-form">
+      <input id="ask-q" type="text" autocomplete="off" maxlength="200" placeholder="Which projects use FastAPI?" aria-label="Your question">
+      <button class="btn primary" type="submit">Ask</button>
+    </form>
+    <div class="chips" id="ask-chips"></div>
+    <ul class="steps" id="ask-steps" aria-live="polite"></ul>
+    <p class="answer" id="ask-out" aria-live="polite"></p>
+    <p class="error" id="ask-err" role="alert" hidden></p>
+    <div class="chips" id="ask-books" hidden></div>
+    <div class="chips"><button class="btn" id="ask-stop" type="button" hidden>Stop</button></div>
+    <p class="ask-note" id="ask-note"></p>
+  </div>
+</section>
+
+<article class="panel side card reader" id="reader" role="dialog" aria-labelledby="reader-title" aria-hidden="true">
+  <button class="grab" type="button" aria-label="Close book"></button>
+  <div class="panel-scroll" id="reader-scroll">
+    <div class="reader-top">
+      <span class="key num" id="reader-call"></span>
+      <span class="pill" id="reader-status"></span>
+      <span class="when" id="reader-when"></span>
+      <button class="btn" id="reader-close" type="button">Close book</button>
+    </div>
+    <h2 id="reader-title" tabindex="-1"></h2>
+    <p class="sub" id="reader-sub"></p>
+    <p class="body" id="reader-body"></p>
+    <dl class="facts" id="reader-facts"></dl>
+    <div class="figure" id="reader-figure"></div>
+    <div class="gallery" id="reader-gallery"></div>
+    <p class="empty" id="reader-empty">No screenshots in this repository yet.</p>
+    <div id="reader-built"></div>
+    <p class="made" id="reader-made"></p>
+    <div class="links" id="reader-links"></div>
+    <div class="reader-foot">
+      <button class="btn" id="reader-prev" type="button">Previous book</button>
+      <button class="btn" id="reader-next" type="button">Next book</button>
+    </div>
+  </div>
+</article>
+
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Screenshot" aria-hidden="true">
+  <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
+  <div class="lb-bar">
+    <button class="btn" id="lb-prev" type="button">Previous</button>
+    <span id="lb-count"></span>
+    <button class="btn" id="lb-next" type="button">Next</button>
+    <button class="btn" id="lb-close" type="button">Close</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ---------- the books ---------- */
+var GROUPS = [
+  {key:'desk', name:'At the desk'},
+  {key:'ml', name:'Machine learning'},
+  {key:'products', name:'Products and client work'},
+  {key:'systems', name:'Systems, games and graphics'}
+];
+var GH = 'https://github.com/';
+var repo = function(path, label){ return {label: label || ('github.com/' + path), href: GH + path}; };
+var BOOKS = [
+  {id:'authors-note', group:'desk', title:'About C-Sawe', spine:'About C-Sawe', call:'920', sub:"Author's note",
+   status:'', kind:'', when:'', color:'#EFE7D6', ink:'#1C1F3A', t:.4, h:2.1, face:true,
+   blurb:'Who wrote all of these.',
+   body:"I'm Caleb Kipchirchir. On GitHub I'm C-Sawe. I'm in the final year of a BSc in Informatics and Computer Science at Strathmore University in Nairobi. I work on the gap between a model that runs in a notebook and a system that keeps running in production: continuous training pipelines for trading agents on one side, and inventory, payment and WhatsApp systems for real shops on the other.",
+   facts:[], images:[],
+   sections:[
+     {h:'What I do', items:[
+       'Applied reinforcement learning and MLOps: PPO agents, drift detection and automated retraining.',
+       'Back ends in Python (FastAPI, Flask), PHP (Laravel) and Node, on PostgreSQL and MySQL.',
+       'Front ends in React and Vue, with deck.gl or Three.js when the data is spatial.',
+       'Payments and messaging for Kenyan businesses: M-Pesa STK Push and WhatsApp.']},
+     {h:'Outside the degree', items:[
+       'I run Mosop Farm Inputs, a farm supply business in Uasin Gishu with a branch in Nandi Hills, and I write its software.',
+       'I founded Nexatech, which builds WhatsApp automation for lenders, SACCOs and small businesses.']}
+   ],
+   made:[], links:[repo('C-Sawe'), {label:'LinkedIn', href:'https://www.linkedin.com/in/caleb-kipchirchir-8582b8397/'}]},
+
+  {id:'thesis', group:'ml', title:'Continuous Training', spine:'Continuous Training', call:'006.31',
+   sub:'A self-healing MLOps pipeline around a reinforcement learning trading agent',
+   status:'Thesis in progress', kind:'wip', when:'June 2026 to now', color:'#23232B', ink:'#E0B04A', t:1.05, h:2.3,
+   blurb:'My final-year thesis: a pipeline that notices when a trading agent decays and retrains it.',
+   body:"Trading models are usually trained once on a fixed slice of history. Put into a live market they decay as conditions change, and nothing notices. My thesis wraps a PPO agent in a continuous training loop that watches its rolling Sharpe ratio, retrains when it drifts, and promotes the new model only if it beats the one in service on data neither has seen. It trades five energy equities: XOM, CVX, SHEL, BP and NEE. Final submission is in January 2027.",
+   facts:[['176','backend tests'],['78','dashboard tests'],['46','state dimensions'],['5 seeds','per walk-forward split']],
+   figure:'pipeline', images:[],
+   sections:[
+     {h:'How it works', items:[
+       'Data: prices from yfinance are adjusted for corporate actions, forward-filled with every filled row flagged, enriched with SMA, RSI and the VIX, then z-scored over backward-looking windows only.',
+       'Agent: PPO from Stable Baselines3 in a Gymnasium environment I wrote to the specification. Actions are continuous target weights per ticker. The reward is the step return minus any increase in maximum drawdown.',
+       'Validation: walk-forward cross-validation over rolling market regimes with a five-seed sweep, measured against buy-and-hold, equal-weight, all-cash and random baselines.',
+       'Serving: a FastAPI gateway that checks a VIX fail-safe before any model call and hot-reloads a newly promoted model.',
+       'Dashboard: React with hand-written SVG charts, which keeps working from cached data if the API goes down.']},
+     {h:'Engineering details', items:[
+       'One test changes a future price and asserts that no past feature moves, which proves there is no look-ahead leakage.',
+       'Every trading decision traces back to the model version, training run and data partition that produced it.',
+       'The stack deploys to one Linux VM with Docker Compose and GitHub Actions, behind Caddy, with daily backups and a rehearsed restore.',
+       'I benchmarked CPU against Apple MPS for the 14.7K-parameter policy. CPU was about 12 times faster, so training runs on CPU.']}
+   ],
+   made:['Python','Stable Baselines3','Gymnasium','MLflow','FastAPI','PostgreSQL','React','Docker'],
+   links:[repo('C-Sawe/mlops-energy-trader')]},
+
+  {id:'diabetes', group:'ml', title:'Diabetes Risk', spine:'Diabetes Risk', call:'616.462',
+   sub:'A risk estimator that prefers an honest score to a flattering one',
+   status:'Complete', kind:'live', when:'July 2026', color:'#D9743A', ink:'#1B1B20', t:.7, h:1.95,
+   blurb:'A web app that estimates diabetes risk from lifestyle and health indicators.',
+   body:"Someone ticks a handful of lifestyle and health indicators and gets a risk estimate with a plain recommendation, such as routine monitoring or a referral for a fasting blood glucose test. The model is trained on CDC BRFSS survey data. I removed symptoms that give the answer away, such as polyuria, because they made the scores look better and the model less useful.",
+   facts:[['0.776','ROC-AUC'],['85.9%','accuracy'],['5-fold','cross-validation'],['1,000','patient records']],
+   plate:'img/diabetes-ui.webp',
+   images:[
+     {src:'img/diabetes-ui.webp', w:1400, h:879, alt:'The risk estimator form with a 49% estimated risk shown in a dial.', cap:'The estimator: tick what applies and read the risk.'},
+     {src:'img/diabetes-weights.webp', w:1085, h:759, alt:'Bar chart of model weights, led by high blood pressure and high cholesterol.', cap:'What the model weighs most.'},
+     {src:'img/diabetes-symptoms.webp', w:1149, h:824, alt:'Bar chart of the diabetes rate among people reporting each indicator.', cap:'Diabetes rate for each indicator.'},
+     {src:'img/diabetes-eda.webp', w:1280, h:477, alt:'Counts of diagnosed and undiagnosed patients, and age distribution by outcome.', cap:'The dataset: 14% diagnosed, skewed older.'}
+   ],
+   sections:[
+     {h:'What I built', items:[
+       'Exploratory analysis in Python to find what drives risk. High blood pressure and high cholesterol came out on top.',
+       'Logistic regression and random forest models compared on an 80/20 stratified split. The forest gained 0.3% and overfitted, so I shipped the one a clinician can read.',
+       'A FastAPI service with prediction, metrics and dataset endpoints.',
+       'A React and TypeScript dashboard for entering indicators and reading the result.']}
+   ],
+   made:['Python','scikit-learn','FastAPI','React','TypeScript'],
+   links:[repo('C-Sawe/diabetes-risk-predictor')]},
+
+  {id:'sortline', group:'ml', title:'Sortline', spine:'Sortline', call:'006.37',
+   sub:'Turns a messy folder of product photos into a clean catalogue',
+   status:'Working prototype', kind:'wip', when:'July to September 2026', color:'#A99BD4', ink:'#1C1F3A', t:.7, h:2.1,
+   blurb:'Deduplicates, groups, names and cuts out product photos automatically.',
+   body:"A shop with thousands of products ends up with a camera roll of near-identical photos and no names. Sortline takes that folder and gives back a catalogue: duplicates removed, photos of the same product grouped, each group named from the text printed on the pack, and every background stripped.",
+   facts:[], images:[],
+   sections:[
+     {h:'How it works', items:[
+       'Perceptual hashing finds exact and near-duplicate shots.',
+       'CLIP image embeddings clustered with HDBSCAN group photos of the same product without being told how many products there are.',
+       'EasyOCR reads the largest text on the pack and turns it into the product name.',
+       'Backgrounds are removed with BiRefNet through rembg. I chose it after comparing it with U2Net, ISNet and BRIA on real product shots, where the default left ghost artefacts.',
+       'It runs in batches and uses Apple MPS when it is available.']},
+     {h:'What I built', items:[
+       'The FastAPI pipeline, with SQLite keeping track of jobs.',
+       'A React and TypeScript front end: drop a folder in, export the cleaned catalogue.']}
+   ],
+   made:['Python','PyTorch','CLIP','HDBSCAN','EasyOCR','rembg','FastAPI','React'],
+   links:[repo('C-Sawe/Sortline')]},
+
+  {id:'queues', group:'ml', title:'The Queue', spine:'The Queue', call:'519.82',
+   sub:'Queue management with predicted waiting times for public service centres',
+   status:'IS project', kind:'wip', when:'October 2026 to now', color:'#E8B33C', ink:'#1C1F3A', t:.8, h:1.85,
+   blurb:'A queue system that tells each person how long they will wait.',
+   body:"Anyone who has spent a morning at a public service centre knows the worst part is not knowing how long is left. This system issues a ticket without asking anyone to create an account, runs the counters, and predicts each person's wait with a random forest. The prediction is recalculated on every queue event: an arrival, a finished service, an expired ticket, a counter opening or closing.",
+   facts:[['4.1 min','average error on held-out data'],['13.3 min','error of the queueing-theory baseline'],['0.88','R squared'],['92','assertions in the smoke test']],
+   images:[],
+   sections:[
+     {h:'How it works', items:[
+       'Five live features feed the model: people ahead, arrivals in the last hour, service rate, average service time over 14 days, and time of day.',
+       'If the model is missing or times out, the system falls back to a deterministic queueing estimate and flags those predictions so they stay out of the accuracy reports.',
+       "Text updates go through a pluggable SMS gateway with drivers for Africa's Talking and Twilio, and delivery reports confirm that a message reached the handset.",
+       'Each code module maps to one process in the data flow diagram, so the design document and the code can be read side by side.']},
+     {h:'What I built', items:[
+       'Client pages to join a queue, hold a ticket and track it live.',
+       'A counter console for staff, and an administrator dashboard with reports, counter settings and a notification audit log.',
+       'The training pipeline in Python with scikit-learn. For now it is trained on 1,000 simulated records.']}
+   ],
+   made:['PHP','MySQL','JavaScript','Python','scikit-learn'],
+   links:[]},
+
+  {id:'mpesa', group:'products', title:'M-Pesa STK Push', spine:'M-Pesa STK Push', call:'332.1',
+   sub:"Put a payment prompt on a customer's phone",
+   status:'Complete', kind:'live', when:'July 2025', color:'#7FB7BE', ink:'#14263A', t:.5, h:1.8, lean:true,
+   blurb:"A small service that triggers an M-Pesa payment prompt from a web form.",
+   body:"Most payments in Kenya go through M-Pesa. This Node and Express service takes a phone number and an amount from a web form, triggers the STK Push prompt on the customer's handset through Safaricom's Daraja API, and receives the outcome on a callback endpoint.",
+   facts:[], plate:'img/mpesa-form.webp',
+   images:[{src:'img/mpesa-form.webp', w:1400, h:741, alt:'A payment form asking for an M-Pesa number and an amount in shillings.', cap:'The payment form.'}],
+   sections:[
+     {h:'What it does', items:[
+       'Accepts numbers typed as 07xx and converts them to the 2547xx format the API expects.',
+       'Authenticates and sends the STK Push request to the Safaricom sandbox.',
+       'Records on the callback whether the payment went through.']}
+   ],
+   made:['Node.js','Express','Safaricom Daraja API'],
+   links:[repo('C-Sawe/M-Pesa-STK-Push-Integration')]},
+
+  {id:'mosop-agent', group:'products', title:'Mosop Agent', spine:'Mosop Agent', call:'006.35',
+   sub:'A WhatsApp sales agent and operations portal for a farm supply business',
+   status:'In daily use', kind:'live', when:'July to September 2026', color:'#3F7D5A', ink:'#F3EEDD', t:.95, h:2.2,
+   blurb:'Answers customers on WhatsApp and runs stocktake, debt and fleet views for Mosop Farm Inputs.',
+   body:"Customers of Mosop Farm Inputs ask about stock and prices on WhatsApp at all hours. This agent answers them from live inventory, in the company's voice, under rules about what it must never disclose. Around it I built the portal that staff use to run the shop.",
+   facts:[['14','portal screens'],['2','branches']], images:[],
+   sections:[
+     {h:'The agent', items:[
+       'Messages arrive through the open-source Evolution API and a FastAPI webhook.',
+       'Replies come from a Llama 3.3 model on Groq, grounded in current inventory and bound by pricing and confidentiality rules that an admin can edit.',
+       'Staff read orders and reply to customers from the portal.']},
+     {h:'The portal', items:[
+       'Sales, cashier, supplier, trending product and quarterly analytics for each branch.',
+       'A debtors dashboard and the movement history of any product.',
+       'Stocktake: staff count with a phone or a barcode scanner, the system figure is hidden so nobody is biased by it, and the result exports as CSV for the Microsoft Dynamics RMS tills.',
+       'A fleet map on Leaflet fed by Protrack365 GPS trackers.',
+       'JWT sign-in with roles, rate limiting and PostgreSQL row-level security.']}
+   ],
+   made:['Python','FastAPI','Evolution API','Groq','PostgreSQL','React','Leaflet'],
+   links:[repo('C-Sawe/whatsapp-agent')]},
+
+  {id:'agro-ai', group:'products', title:'Agro AI Agent', spine:'Agro AI Agent', call:'632.95',
+   sub:'A farming chatbot in English and Swahili for an agrovet website',
+   status:'Complete', kind:'live', when:'August 2025', color:'#E6D9B0', ink:'#2E4A2B', t:.6, h:1.9,
+   blurb:'A chat widget that answers farmers about agrochemicals, pests and crops.',
+   body:"An earlier take on the same idea, built as a floating chat widget for the Mosop Farm Inputs website. Farmers ask about agrochemical products, safe usage, pests and crops in English or Swahili. When the model cannot answer with confidence, it gives the farmer a support phone number.",
+   facts:[], images:[],
+   sections:[
+     {h:'What I built', items:[
+       'A Laravel 10 back end that streams replies from a language model on Groq.',
+       'Chat history that persists for each session.',
+       'A glass-style widget in plain JavaScript and Bootstrap 5 that works on phones.',
+       'The hand-off to a human support line.']}
+   ],
+   made:['PHP','Laravel','JavaScript','Bootstrap','Groq'],
+   links:[repo('C-Sawe/AI-Intergration')]},
+
+  {id:'ops-network', group:'products', title:'Vilcom Ops Network', spine:'Ops Network', call:'526',
+   sub:'An interactive 3D map of network coverage',
+   status:'Complete', kind:'live', when:'February to March 2026', color:'#6B4A8C', ink:'#F3EEDD', t:.75, h:2.05,
+   blurb:'A globe that zooms from the world down to Kenyan counties to show network reach.',
+   body:"Built for Vilcom Networks to show where its network reaches. The view opens on a slowly rotating globe and zooms down to individual Kenyan counties, with sites in Kampala, Kigali and Goma as well.",
+   facts:[], images:[],
+   sections:[
+     {h:'What I built', items:[
+       'The zoom from globe to county, using react-globe.gl, deck.gl and MapLibre.',
+       'Extruded 3D regions, curved links between sites and clustered site markers.',
+       'Distance calculation and centroid targeting for Kenyan counties with Turf.js.',
+       'Python scripts that extract and merge county boundaries into the map data.',
+       'A trailing cursor, idle auto-rotation and floating camera controls.']}
+   ],
+   made:['React','TypeScript','deck.gl','MapLibre','Turf.js','Python'],
+   links:[repo('C-Sawe/Interactive_globe')]},
+
+  {id:'vilcom', group:'products', title:'Vilcom Team Work', spine:'Vilcom Team Work', call:'658.7',
+   sub:'Sign-in and data layers on two internal systems',
+   status:'Team work', kind:'', when:'February to July 2026', color:'#9A6A3A', ink:'#1F1F22', t:.65, h:1.95,
+   blurb:'My contributions to an asset management system and a reporting tracker.',
+   body:"Two internal systems at Vilcom Networks, built by a small team in shared repositories. One is an asset management system that tracks IT assets, consumables, licences, maintenance, support tickets and SSL certificates. The other is a tracker that sends automated daily email reports. My commits are mostly in the sign-in and data layers.",
+   facts:[], images:[],
+   sections:[
+     {h:'My contributions', items:[
+       'Email one-time-password verification for the tracker, and forgot-password flows in both systems.',
+       'Laravel models and migrations, and the move to MySQL.',
+       'Pagination in the Vue front end.',
+       'The automation behind the daily email report.',
+       'Sign-in and profile fetching against the JSON API in the asset system.']}
+   ],
+   made:['PHP','Laravel','Vue','MySQL'],
+   links:[repo('VilcomNetworksLTD/asset-management-backend'), repo('VilcomNetworksLTD/whms-tracker')]},
+
+  {id:'last-clue', group:'systems', title:'The Last Clue', spine:'The Last Clue', call:'794.8',
+   sub:'A detective puzzle game where every pixel is drawn by our own C++',
+   status:'Playable prototype', kind:'wip', when:'October 2026 to now', color:'#C8402E', ink:'#F6EBD8', t:.95, h:2.2,
+   blurb:'A 2D detective game built on graphics algorithms we wrote ourselves, with puzzles you solve in code.',
+   body:"A 2D detective game for a Computer Graphics course. You search a study, crack a safe, piece a torn letter back together, pin evidence to a board and name the culprit. No graphics library draws anything: every line, circle, fill and animation comes from algorithms the four of us implemented, and OpenGL only puts the finished frame on screen. Some locks open only when you fix a short program in ClueScript, the game's own language.",
+   facts:[['26','graphics techniques'],['72','C++ source files'],['42 of 60','commits are mine'],['4','people on the team']],
+   plate:'img/clue-game.png',
+   images:[
+     {src:'img/clue-playthrough.webp', w:525, h:250, alt:'Animated playthrough: the detective walks the study, solves the letter, the safe and the code puzzle.', cap:'One full investigation, played by a script.'},
+     {src:'img/clue-game.png', w:1050, h:500, alt:'The study at night with the case file panel, a safe, a desk and a chalk outline.', cap:'The game window with the live case file.'},
+     {src:'img/clue-editor.png', w:800, h:500, alt:'The in-game code editor, where a program is fixed until it draws a star.', cap:'A code puzzle: fix the program until it draws the symbol.'},
+     {src:'img/clue-board.png', w:900, h:560, alt:'A cork evidence board with suspects, notes and red strings.', cap:'Evidence board with Bezier strings.'},
+     {src:'img/clue-letter.png', w:1210, h:524, alt:'Four torn pieces of a letter beside the restored letter.', cap:'The torn letter, before and after.'},
+     {src:'img/clue-safe.png', w:880, h:470, alt:'A safe dial at zero and rotated to 37.', cap:'The safe dial rotates about its pivot.'},
+     {src:'img/clue-characters.png', w:900, h:460, alt:'The detective and three suspects in a line-up.', cap:'The line-up, built from ellipses and polygons.'}
+   ],
+   sections:[
+     {h:'My part: graphics and algorithms', items:[
+       'The canvas, a BMP writer and a bitmap font.',
+       'DDA and Bresenham lines, and midpoint circles and ellipses.',
+       '2D transformation matrices, including shear and reflection in any line.',
+       'An animated GIF encoder written from scratch, with palette building and LZW compression.',
+       'The GLFW window, the render loop and the bridge that uploads our canvas to OpenGL as a texture.',
+       'The ClueScript interpreter: a lexer, a recursive-descent parser and a tree-walking evaluator.']},
+     {h:'How a code puzzle works', items:[
+       'The player edits a program in the in-game editor and runs it.',
+       'The program draws with our own line and circle algorithms.',
+       'The game rasterises that drawing and the target, and opens the lock if they overlap by 85% or more.']}
+   ],
+   made:['C++17','CMake','OpenGL','GLFW'],
+   links:[repo('C-Sawe/the-last-clue')]},
+
+  {id:'load-balancer', group:'systems', title:'Load Balancer', spine:'Load Balancer', call:'004.36',
+   sub:'Consistent hashing over Docker containers that it starts and stops itself',
+   status:'Coursework', kind:'', when:'July 2026', color:'#2C4A6E', ink:'#F3EEDD', t:.75, h:2.0,
+   blurb:'An HTTP load balancer with a hash ring, self-healing replicas and a measured bug hunt.',
+   body:"An HTTP load balancer for a Distributed Systems course. It spreads requests over server replicas with a consistent hash ring, so adding or removing a server moves as few requests as possible. It also manages the replicas: it starts and removes sibling containers through the Docker socket, and replaces one that stops answering its heartbeat.",
+   facts:[['512','slots on the hash ring'],['9','virtual servers per replica'],['10,000','requests per experiment']],
+   plate:'img/lb-distribution.webp',
+   images:[
+     {src:'img/lb-distribution.webp', w:1000, h:600, alt:'Bar chart of requests per server across three replicas.', cap:'Requests per server across three replicas, after the hash fix.'},
+     {src:'img/lb-scaling.webp', w:1000, h:600, alt:'Line chart: peak load on one server falls as servers go from two to six.', cap:'Peak load on one server as replicas increase.'},
+     {src:'img/lb-cluster.webp', w:1400, h:878, alt:'Terminal output from starting the cluster and adding a server by hand.', cap:'Starting the cluster and scaling it by hand.'},
+     {src:'img/lb-tests.webp', w:1164, h:864, alt:'Terminal output from the endpoint test script.', cap:'The endpoint test run.'}
+   ],
+   sections:[
+     {h:'What I found', items:[
+       "With the assignment's polynomial hash, one of three servers received no requests at all. Quadratic functions modulo a power of two produce very few distinct values, so 10,000 requests landed in 64 slots.",
+       'Replacing it with an MD5-based hash spread both requests and virtual servers evenly.',
+       'Peak load on the busiest server fell as replicas went from two to six.',
+       'Stopping a container during a test moved its traffic to the next server on the ring, and a replacement started automatically.']},
+     {h:'What I built', items:[
+       'The balancer and the server in Python and Flask.',
+       'Endpoints to list, add and remove replicas.',
+       'Quadratic probing to resolve slot collisions.',
+       'The test script and the analysis behind these charts.']}
+   ],
+   made:['Python','Flask','Docker','Docker Compose'],
+   links:[repo('C-Sawe/distributed-system-load-balancer')]},
+
+  {id:'ics-chain', group:'systems', title:'ICS-Chain', spine:'ICS-Chain', call:'005.74',
+   sub:'A blockchain from scratch in TypeScript',
+   status:'Complete', kind:'live', when:'February 2026', color:'#EBB7C2', ink:'#4A2130', t:.55, h:1.8,
+   blurb:'A small blockchain with proof of work and tamper detection.',
+   body:"A small blockchain written to understand how one works. Each block carries the hash of the block before it, mining needs proof of work at a set difficulty, and a validator walks the chain to catch any change to its history.",
+   facts:[], images:[],
+   sections:[
+     {h:'What it covers', items:[
+       'Linked blocks secured with SHA-256.',
+       'Proof-of-work mining with adjustable difficulty.',
+       'Chain validation that detects edited data.',
+       'Fully typed TypeScript, run with tsx on Node.']}
+   ],
+   made:['TypeScript','Node.js','crypto-js'],
+   links:[repo('C-Sawe/ICS-CHAIN')]},
+
+  {id:'waste-app', group:'systems', title:'Waste Collection App', spine:'Waste Collection', call:'628.44',
+   sub:'An Android app for residents, collectors and administrators',
+   status:'Team work', kind:'', when:'October to November 2025', color:'#8BA05A', ink:'#1F2A14', t:.6, h:1.95,
+   blurb:'Residents check collection schedules, report problems and find collection points.',
+   body:"An Android app built with a classmate. Residents see their collection schedule, report a problem and find collection points on a map. Collectors apply to join and work from their own dashboard, and administrators have one too.",
+   facts:[], images:[],
+   sections:[
+     {h:'My part', items:[
+       'The resident home screen.',
+       'The schedule, report and map screens.']}
+   ],
+   made:['Kotlin','Firebase Authentication','Cloud Firestore','Google Maps'],
+   links:[repo('alvviinn/WasteManagementApp')]},
+
+  {id:'shorter-works', group:'systems', title:'Shorter Works', spine:'Shorter Works', call:'080',
+   sub:'Small builds, 2023 to 2026',
+   status:'', kind:'', when:'2023 to 2026', color:'#F3EEDD', ink:'#C8402E', t:.7, h:2.1,
+   blurb:'A platformer, an audio player, a weather app and other small builds.',
+   body:"Small projects that each taught me one thing.",
+   facts:[], images:[],
+   sections:[
+     {h:'In this volume', items:[
+       'A side-scrolling platformer on an HTML canvas in under 500 lines of plain JavaScript, with coins, lives, a timer and a scrolling camera (2026).',
+       'An audio player built on the Web Audio API (2026).',
+       'YouthPitch: the front end of a platform where young entrepreneurs pitch ideas and find mentors and investors (2025).',
+       'A calculator in Java styled after the one on iOS (2024).',
+       'Weatherman: an Android weather app in Kotlin on the OpenWeatherMap API (2023).']}
+   ],
+   made:[],
+   links:[repo('C-Sawe/mario-game','Platformer'), repo('C-Sawe/audio-player','Audio player'), repo('C-Sawe/YouthPitch-frontend','YouthPitch'), repo('C-Sawe/IOS-Calculator-Java','Calculator'), repo('C-Sawe/Weatherman','Weatherman')]},
+
+  {id:'library-card', group:'desk', title:'Get in touch', spine:'Get in touch', call:'302.2', sub:'The library card',
+   status:'', kind:'', when:'', color:'#FAFAF5', ink:'#2C4A6E', t:.35, h:1.9, face:true,
+   blurb:'Where to find me.',
+   body:"I'm open to research collaborations in quantitative reinforcement learning and MLOps, conversations about resilient back-end systems, and software or AI engineering roles.",
+   facts:[], images:[], sections:[], made:[],
+   links:[{label:'caleb.Kipchirchir@strathmore.edu', href:'mailto:caleb.Kipchirchir@strathmore.edu'}, {label:'LinkedIn', href:'https://www.linkedin.com/in/caleb-kipchirchir-8582b8397/'}, repo('C-Sawe')]}
+];
+
+var LATEST_COMMIT = '12 Nov 2026';
+var byId = {};
+BOOKS.forEach(function(b,i){ byId[b.id]=b; b.index=i; });
+
+var reduceMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+var wideMQ = window.matchMedia('(min-width: 900px)');
+var $ = function(id){ return document.getElementById(id); };
+function el(tag, cls, text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+function focusQuiet(node){ try{ node.focus({preventScroll:true}); }catch(e){} }
+var reader = $('reader'), caption = $('caption'), scrim = $('scrim');
+var activeId = null, scene3d = null, lastTrigger = null, panelOpen = null, panelTrigger = null;
+var PANELS = {catalogue:1, about:1, contact:1, ask:1};
+
+/* ---------- status strip: counted from the data, not typed in ---------- */
+(function(){
+  var repoBooks = BOOKS.filter(function(b){ return b.group!=='desk'; });
+  var shots = 0, withShots = 0;
+  BOOKS.forEach(function(b){ shots += b.images.length; if (b.images.length) withShots++; });
+  var wip = BOOKS.filter(function(b){ return b.kind==='wip'; }).length;
+  [['Books on the shelf', String(BOOKS.length), ''],
+   ['From repositories', String(repoBooks.length), ''],
+   ['Still in progress', String(wip), ''],
+   ['Screenshots', String(shots), ' in ' + withShots + ' books'],
+   ['Latest commit read', LATEST_COMMIT, '']
+  ].forEach(function(t){
+    var d=el('div'); d.appendChild(el('dt','key',t[0]));
+    var dd=el('dd','num',t[1]); if (t[2]) dd.appendChild(el('small','',t[2])); d.appendChild(dd); $('strip').appendChild(d);
+  });
+})();
+
+/* ---------- catalogue ---------- */
+(function(){
+  var host = $('groups');
+  GROUPS.forEach(function(g){
+    var wrap = el('div','group');
+    wrap.appendChild(el('h2','key',g.name));
+    var ul = el('ul','rows');
+    BOOKS.filter(function(b){ return b.group===g.key; }).forEach(function(b){
+      var li = el('li'), btn = el('button','row'); btn.type='button'; btn.id='row-'+b.id;
+      btn.appendChild(el('span','no',b.call));
+      var ti = el('span','ti',b.title); ti.appendChild(el('span','bl',b.blurb)); btn.appendChild(ti);
+      var meta = el('span','meta');
+      if (b.status){ var p=el('span','pill',b.status); p.dataset.kind=b.kind||''; meta.appendChild(p); }
+      if (b.when) meta.appendChild(el('span','when',b.when));
+      btn.appendChild(meta);
+      btn.addEventListener('click', function(){ openBook(b.id); });
+      li.appendChild(btn); ul.appendChild(li);
+    });
+    wrap.appendChild(ul); host.appendChild(wrap);
+  });
+})();
+
+/* ---------- appearance: by the viewer's clock unless they choose ---------- */
+var MODE_KEY = 'swizz-study-appearance', mode = 'auto';
+try{ var saved = localStorage.getItem(MODE_KEY); if (saved==='day' || saved==='night') mode = saved; }catch(e){}
+function nightNow(){ var d=new Date(), h=d.getHours()+d.getMinutes()/60; return h<6.5 || h>=18.5; }
+function isDark(){ return document.documentElement.getAttribute('data-theme')==='dark'; }
+function applyMode(){
+  var dark = mode==='night' || (mode==='auto' && nightNow());
+  if (isDark()!==dark || !document.documentElement.hasAttribute('data-theme')) document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  $('mode-label').textContent = mode==='auto' ? 'Auto' : (mode==='day' ? 'Day' : 'Night');
+  $('mode').setAttribute('aria-label', 'Appearance: ' + (mode==='auto' ? 'automatic, by your local time' : mode) + '. Press to change.');
+}
+$('mode').addEventListener('click', function(){
+  mode = {auto:'day', day:'night', night:'auto'}[mode];
+  try{ if (mode==='auto') localStorage.removeItem(MODE_KEY); else localStorage.setItem(MODE_KEY, mode); }catch(e){}
+  applyMode();
+});
+applyMode(); setInterval(applyMode, 60000);
+
+/* ---------- overlays ---------- */
+function setHash(h){ try{ if (location.hash !== '#'+h) history.replaceState(null,'','#'+h); }catch(e){} }
+function syncChrome(){
+  [].forEach.call(document.querySelectorAll('.dock button'), function(b){ b.setAttribute('aria-pressed', String(b.dataset.panel===panelOpen)); });
+  scrim.classList.toggle('is-on', !!panelOpen && panelOpen!=='ask');
+  document.body.classList.toggle('has-sheet', !!panelOpen || !!activeId);
+  var f={x0:0,x1:1,y0:0,y1:1};
+  if (activeId || panelOpen==='ask'){ if (wideMQ.matches) f.x1 = 1 - (Math.min(430, window.innerWidth*.44)+24)/window.innerWidth; else f.y1 = .42; }
+  if (scene3d) scene3d.setFree(f);
+}
+function openPanel(name, from){
+  if (!PANELS[name]) return;
+  if (panelOpen===name) return;
+  if (activeId) closeBook(true);
+  if (panelOpen) closePanel(true);
+  panelTrigger = from || (document.activeElement!==document.body ? document.activeElement : null);
+  panelOpen = name;
+  var p=$('panel-'+name); p.style.transform=''; p.classList.add('is-open'); p.setAttribute('aria-hidden','false');
+  setHash(name); syncChrome();
+  if (name==='ask'){ prepareAsk(); if (!wideMQ.matches) setView('shelf'); }
+  setTimeout(function(){ focusQuiet(name==='ask' && wideMQ.matches ? $('ask-q') : $('t-'+name)); }, 70);
+}
+function closePanel(silent){
+  if (!panelOpen) return;
+  var name=panelOpen, p=$('panel-'+name); panelOpen=null;
+  p.style.transform=''; p.classList.remove('is-open'); p.setAttribute('aria-hidden','true');
+  if (name==='ask'){ stopAsk(); if (scene3d) scene3d.setPulled([]); }
+  syncChrome();
+  if (silent!==true){ setHash('study'); if (panelTrigger && document.contains(panelTrigger)) focusQuiet(panelTrigger); }
+  panelTrigger=null;
+}
+[].forEach.call(document.querySelectorAll('.dock button'), function(b){
+  b.addEventListener('click', function(){ if (panelOpen===b.dataset.panel) closePanel(); else openPanel(b.dataset.panel, b); });
+});
+[].forEach.call(document.querySelectorAll('[data-close]'), function(b){ b.addEventListener('click', function(){ closePanel(); }); });
+scrim.addEventListener('click', function(){ closePanel(); });
+/* sheets: tap the grabber to close, pull it past 90px to close, anything less springs back */
+[].forEach.call(document.querySelectorAll('.panel'), function(p){
+  var g=p.querySelector('.grab'), y0=null, dy=0, shut=function(){ if (p===reader) closeBook(); else closePanel(); };
+  g.addEventListener('pointerdown', function(e){ y0=e.clientY; dy=0; p.classList.add('is-dragging'); try{ g.setPointerCapture(e.pointerId); }catch(err){} });
+  g.addEventListener('pointermove', function(e){ if (y0==null) return; dy=Math.max(0,e.clientY-y0); p.style.transform='translateY('+dy+'px)'; });
+  g.addEventListener('pointerup', function(){ if (y0==null) return; y0=null; p.classList.remove('is-dragging'); p.style.transform=''; if (dy>90 || dy<4) shut(); });
+  g.addEventListener('pointercancel', function(){ y0=null; p.classList.remove('is-dragging'); p.style.transform=''; });
+  g.addEventListener('keydown', function(e){ if (e.key==='Enter' || e.key===' '){ e.preventDefault(); shut(); } });
+});
+function route(){
+  var h = location.hash.slice(1);
+  if (byId[h]){ if (activeId!==h) openBook(h,{quiet:true}); }
+  else if (PANELS[h]) openPanel(h);
+  else { if (activeId) closeBook(true); if (panelOpen) closePanel(true); }
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- the open book ---------- */
+function pipelineFigure(){
+  var steps=[['Market data','yfinance into PostgreSQL'],['Training','PPO, tracked in MLflow'],['Serving','FastAPI with a VIX fail-safe'],['Dashboard','React telemetry']];
+  var ol=el('ol','pipe');
+  steps.forEach(function(st){ var li=el('li'); li.appendChild(el('b','',st[0])); li.appendChild(el('span','',st[1])); ol.appendChild(li); });
+  var loop=el('div','loop'); loop.appendChild(el('b','','Continuous training loop'));
+  loop.appendChild(el('span','','Watches the rolling Sharpe ratio, retrains on drift, and promotes a model only if it wins out of sample. Then the cycle starts again at step 1.'));
+  var f=document.createDocumentFragment(); f.appendChild(ol); f.appendChild(loop); return f;
+}
+var shots = [];
+function fillReader(b){
+  $('reader-call').textContent = b.call + ' KIP';
+  var st = $('reader-status'); st.textContent = b.status; st.dataset.kind = b.kind || ''; st.hidden = !b.status;
+  var wh = $('reader-when'); wh.textContent = b.when || ''; wh.hidden = !b.when;
+  $('reader-title').textContent = b.title;
+  $('reader-sub').textContent = b.sub;
+  $('reader-body').textContent = b.body;
+  var facts = $('reader-facts'); facts.textContent=''; facts.hidden = !b.facts.length;
+  b.facts.forEach(function(f){ var d=el('div'); d.appendChild(el('dt','key',f[1])); d.appendChild(el('dd','',f[0])); facts.appendChild(d); });
+  var fig = $('reader-figure'); fig.textContent=''; fig.hidden = !b.figure;
+  if (b.figure==='pipeline') fig.appendChild(pipelineFigure());
+  var gal = $('reader-gallery'); gal.textContent=''; gal.hidden = !b.images.length; shots = b.images;
+  $('reader-empty').hidden = !!b.images.length || !!b.figure || b.group==='desk' || b.id==='shorter-works';
+  b.images.forEach(function(im, i){
+    var f=el('figure'), btn=el('button','shot'); btn.type='button';
+    btn.setAttribute('aria-label','Enlarge: '+im.cap);
+    var img=document.createElement('img'); img.src=im.src; img.alt=im.alt; img.width=im.w; img.height=im.h; img.loading = i ? 'lazy' : 'eager'; img.decoding='async';
+    img.addEventListener('error', function(){ f.textContent=''; f.appendChild(el('p','empty','This screenshot did not load: '+im.cap)); });
+    btn.appendChild(img); btn.addEventListener('click', function(){ openShot(i, btn); });
+    f.appendChild(btn); f.appendChild(el('figcaption','',im.cap)); gal.appendChild(f);
+  });
+  var built = $('reader-built'); built.textContent='';
+  b.sections.forEach(function(sec){
+    built.appendChild(el('h3','',sec.h));
+    var ul=el('ul'); sec.items.forEach(function(x){ ul.appendChild(el('li','',x)); }); built.appendChild(ul);
+  });
+  var made = $('reader-made');
+  made.textContent = b.made.length ? 'Made with ' + new Intl.ListFormat('en',{style:'long',type:'conjunction'}).format(b.made) + '.' : '';
+  made.hidden = !b.made.length;
+  var links = $('reader-links'); links.textContent='';
+  b.links.forEach(function(l){
+    var a=document.createElement('a'); a.href=l.href; a.textContent=l.label;
+    if (l.label.indexOf('github.com/')===0) a.className='mono';
+    if (/^https?:/.test(l.href)){ a.target='_blank'; a.rel='noopener'; }
+    links.appendChild(a);
+  });
+  links.hidden = !b.links.length;
+  $('reader-scroll').scrollTop = 0;
+}
+
+function openBook(id, opts){
+  var b = byId[id]; if(!b) return;
+  opts = opts || {};
+  var from = document.activeElement && document.activeElement!==document.body ? document.activeElement : null;
+  if (panelOpen){ if (from && $('panel-'+panelOpen).contains(from)) from = panelTrigger; closePanel(true); }
+  if (!activeId) lastTrigger = from;
+  var wasOpen = !!activeId;
+  activeId = id;
+  fillReader(b);
+  reader.style.transform=''; reader.classList.add('is-open'); reader.setAttribute('aria-hidden','false');
+  if (scene3d) scene3d.setActive(id);
+  setCaption(b); setHash(id); syncChrome();
+  if (!opts.quiet){ if (wasOpen) focusQuiet($('reader-title')); else setTimeout(function(){ focusQuiet($('reader-title')); }, 80); }
+}
+function closeBook(silent){
+  if (!activeId) return;
+  closeShot();
+  activeId = null;
+  reader.style.transform=''; reader.classList.remove('is-open'); reader.setAttribute('aria-hidden','true');
+  if (scene3d) scene3d.setActive(null);
+  setCaption(null); syncChrome();
+  if (silent!==true){ setHash('study'); if (lastTrigger && document.contains(lastTrigger)) focusQuiet(lastTrigger); }
+  lastTrigger = null;
+}
+function step(d){
+  if (!activeId) return;
+  var n = BOOKS.length, i = (byId[activeId].index + d + n) % n;
+  openBook(BOOKS[i].id, {quiet:true});
+}
+var REST_CAPTION = 'Pick a book, the computer or the robot.';
+function setCaption(b, text){
+  caption.textContent='';
+  if (b){ caption.appendChild(el('b','num',b.call)); caption.appendChild(el('span','',b.title)); }
+  else caption.appendChild(el('span','',text || REST_CAPTION));
+}
+setCaption(null);
+$('reader-close').addEventListener('click', function(){ closeBook(); });
+$('reader-prev').addEventListener('click', function(){ step(-1); });
+$('reader-next').addEventListener('click', function(){ step(1); });
+
+/* ---------- screenshot viewer ---------- */
+var lightbox = $('lightbox'), shotIndex = 0, shotTrigger = null;
+function showShot(i){
+  var n = shots.length; shotIndex = (i + n) % n; var im = shots[shotIndex];
+  var img = $('lb-img'); img.src = im.src; img.alt = im.alt; img.width = im.w; img.height = im.h;
+  $('lb-cap').textContent = im.cap;
+  $('lb-count').textContent = (shotIndex+1) + ' of ' + n;
+  $('lb-prev').hidden = $('lb-next').hidden = $('lb-count').hidden = n < 2;
+}
+function openShot(i, from){
+  shotTrigger = from || null; showShot(i);
+  lightbox.classList.add('is-open'); lightbox.setAttribute('aria-hidden','false');
+  try{ $('lb-close').focus({preventScroll:true}); }catch(e){}
+}
+function closeShot(){
+  if (!lightbox.classList.contains('is-open')) return false;
+  lightbox.classList.remove('is-open'); lightbox.setAttribute('aria-hidden','true');
+  if (shotTrigger && document.contains(shotTrigger)){ try{ shotTrigger.focus({preventScroll:true}); }catch(e){} }
+  shotTrigger = null; return true;
+}
+$('lb-close').addEventListener('click', closeShot);
+$('lb-prev').addEventListener('click', function(){ showShot(shotIndex-1); });
+$('lb-next').addEventListener('click', function(){ showShot(shotIndex+1); });
+lightbox.addEventListener('click', function(e){ if (e.target===lightbox || e.target.tagName==='FIGURE') closeShot(); });
+
+document.addEventListener('keydown', function(e){
+  var lb = lightbox.classList.contains('is-open');
+  if (e.key==='Escape'){ if (closeShot()) return; if (activeId) closeBook(); else if (panelOpen) closePanel(); return; }
+  if (lb && e.key==='ArrowLeft') return showShot(shotIndex-1);
+  if (lb && e.key==='ArrowRight') return showShot(shotIndex+1);
+  if (e.key==='Tab'){
+    var box = lb ? lightbox : (panelOpen && panelOpen!=='ask' ? $('panel-'+panelOpen) : null);
+    if (!box) return;
+    var f=[].filter.call(box.querySelectorAll('button,a[href],input,[tabindex="-1"]'), function(n){ return !n.hidden && !n.closest('[hidden]') && n.offsetParent!==null && !n.classList.contains('grab'); });
+    f = f.filter(function(n){ return n.getAttribute('tabindex')!=='-1'; });
+    if (!f.length) return;
+    var k=f.indexOf(document.activeElement); e.preventDefault();
+    f[(k + (e.shiftKey?-1:1) + f.length) % f.length].focus();
+  }
+});
+
+/* ---------- desk: the main monitor lists the projects and steps through them ---------- */
+var SLIDES = BOOKS.filter(function(b){ return b.group!=='desk'; }).map(function(b){ return {book:b, cap:b.blurb}; });
+var slideIndex = 0;
+function setSlideUI(){
+  var s = SLIDES[slideIndex];
+  $('slide-title').textContent = s ? s.book.title : 'No projects';
+  $('slide-cap').textContent = s ? (slideIndex+1) + ' of ' + SLIDES.length + '. ' + s.cap : '';
+}
+function goSlide(d, manual){ if (!SLIDES.length) return; slideIndex = (slideIndex + d + SLIDES.length) % SLIDES.length; setSlideUI(); if (scene3d) scene3d.showSlide(slideIndex, manual); }
+$('slide-prev').addEventListener('click', function(){ goSlide(-1, true); });
+$('slide-next').addEventListener('click', function(){ goSlide(1, true); });
+$('slide-open').addEventListener('click', function(){ var s=SLIDES[slideIndex]; if (s) openBook(s.book.id); });
+setSlideUI();
+var segButtons = [].slice.call(document.querySelectorAll('.seg button'));
+function setView(v){
+  segButtons.forEach(function(b){ b.setAttribute('aria-pressed', String(b.dataset.view===v)); });
+  $('deskbar').classList.toggle('is-on', v==='desk');
+  if (scene3d) scene3d.setView(v);
+}
+segButtons.forEach(function(b){ b.addEventListener('click', function(){ setView(b.dataset.view); }); });
+
+/* ---------- ask the study: search first, then an AI model if this view has one ---------- */
+var askOut=$('ask-out'), askSteps=$('ask-steps'), askBooks=$('ask-books'), askErr=$('ask-err'), askStop=$('ask-stop');
+var sampleP=null, askCtl=null;
+/* Outside Claude's viewer the robot can use your own endpoint instead: a small proxy that holds the model key
+   server-side (see worker/groq-proxy.js). Paste its URL here. Never put an API key in this file. */
+var AI_ENDPOINT = '';
+function endpointSample(prompt, opts){
+  return fetch(AI_ENDPOINT, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prompt:prompt}), signal:opts && opts.signal})
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
+      if (!r.ok){ var e=new Error(j.error || ('The assistant service answered ' + r.status)); e.code = r.status===429 ? 'rate_limited' : 'failed'; throw e; }
+      return {text:String(j.text||''), truncated:!!j.truncated};
+    }); });
+}
+function getSample(){
+  if (!sampleP) sampleP = ((window.claude && typeof window.claude.use==='function') ? Promise.resolve(window.claude.use('sample')).catch(function(){ return null; }) : Promise.resolve(null))
+    .then(function(s){ return s || (AI_ENDPOINT ? endpointSample : null); });
+  return sampleP;
+}
+function prepareAsk(){
+  getSample().then(function(s){
+    $('ask-note').textContent = s
+      ? 'Answers are written by an AI model from the book data on this page. They can be wrong, so the books remain the source.'
+      : 'No AI model is available in this view, so the robot only searches the books.';
+  });
+}
+['Which projects use FastAPI?','What is the thesis about?','What is already in daily use?','Where did C-Sawe work with payments?'].forEach(function(q){
+  var c=el('button','chip',q); c.type='button'; c.addEventListener('click', function(){ $('ask-q').value=q; ask(q); }); $('ask-chips').appendChild(c);
+});
+var STOP = {};
+'the and for with what which who how are was were has have had does did use uses used using about from that this there their your you his her its into out any all can will would should where when why c-sawe sawe caleb project projects work works built build made make show tell me of in on is it to a an do he at or be by as'.split(' ').forEach(function(w){ STOP[w]=1; });
+function bookText(b){
+  var parts=[b.title, b.sub, b.blurb, b.body, b.status, b.made.join(' ')];
+  b.sections.forEach(function(s){ parts.push(s.h); parts.push(s.items.join(' ')); });
+  return parts.join(' ').toLowerCase();
+}
+function matchBooks(q){
+  var words = q.toLowerCase().replace(/[^a-z0-9.+#-]+/g,' ').split(' ').filter(function(w){ return w.length>1 && !STOP[w]; });
+  if (!words.length) return [];
+  return BOOKS.filter(function(b){ return b.group!=='desk'; }).map(function(b){
+    var t=bookText(b), title=b.title.toLowerCase(), made=b.made.join(' ').toLowerCase(), sc=0;
+    words.forEach(function(w){ if (t.indexOf(w)>=0) sc+=1; if (made.indexOf(w)>=0) sc+=2; if (title.indexOf(w)>=0) sc+=3; });
+    return {b:b, sc:sc};
+  }).filter(function(x){ return x.sc>0; }).sort(function(a,c){ return c.sc-a.sc; }).slice(0,4).map(function(x){ return x.b.id; });
+}
+function bookContext(){
+  return BOOKS.filter(function(b){ return b.group!=='desk'; }).map(function(b){
+    var lines=['id: '+b.id, 'title: '+b.title, 'summary: '+b.sub, 'status: '+(b.status||'none'), 'when: '+(b.when||'unknown'), 'description: '+b.body];
+    b.facts.forEach(function(f){ lines.push('fact: '+f[0]+' '+f[1]); });
+    b.sections.forEach(function(s){ lines.push(s.h+': '+s.items.join(' ')); });
+    if (b.made.length) lines.push('made with: '+b.made.join(', '));
+    return lines.join('\n');
+  }).join('\n\n');
+}
+function addStep(state, text){
+  var li=el('li'); li.dataset.state=state;
+  li.appendChild(el('span','mk', state==='done' ? '✓' : (state==='busy' ? '◌' : '!')));
+  li.appendChild(el('span','',text)); askSteps.appendChild(li); return li;
+}
+function markStep(li, state, text){ li.dataset.state=state; li.firstChild.textContent = state==='done' ? '✓' : '!'; li.lastChild.textContent=text; }
+function showPulled(ids){
+  ids = ids.filter(function(id){ return byId[id] && byId[id].group!=='desk'; }).slice(0,5);
+  askBooks.textContent=''; askBooks.hidden=!ids.length;
+  ids.forEach(function(id){ var c=el('button','chip','Open ' + byId[id].title); c.type='button'; c.addEventListener('click', function(){ openBook(id); }); askBooks.appendChild(c); });
+  if (scene3d) scene3d.setPulled(ids);
+  return ids;
+}
+function stopAsk(){ if (askCtl){ try{ askCtl.abort(); }catch(e){} } }
+function ask(q){
+  q = (q||'').trim(); if (!q) return;
+  stopAsk();
+  askOut.textContent=''; askSteps.textContent=''; askErr.hidden=true;
+  var hits = showPulled(matchBooks(q));
+  addStep('done', 'Searched ' + BOOKS.filter(function(b){ return b.group!=='desk'; }).length + ' books by keyword: ' + (hits.length ? hits.length + ' pulled from the shelf' : 'none matched'));
+  getSample().then(function(sample){
+    if (!sample){
+      askOut.textContent = hits.length ? 'These books mention what you asked about. Open one to read it.' : 'Nothing on the shelf matches those words. Try a technology or a project name, such as Flask or Sortline.';
+      return;
+    }
+    var st = addStep('busy', 'Asking the AI model'), ctl = new AbortController(); askCtl = ctl;
+    askStop.hidden=false; askOut.setAttribute('aria-busy','true'); if (scene3d) scene3d.setThinking(true);
+    var prompt = 'You answer questions about the software projects of Caleb Kipchirchir (C-Sawe) for a visitor to his portfolio. Use ONLY the project data below. If the data does not cover the question, say so plainly. Answer in plain text with no markdown, in at most 110 words, and name the projects you rely on by title.' + (sample===endpointSample ? '' : ' Before answering, call the pull_books tool once with the ids of the one to four most relevant projects.') + '\n\nPROJECT DATA\n' + bookContext() + '\n\nQUESTION\n' + q;
+    sample(prompt, {
+      modelTier:'quick', cache:false, signal:ctl.signal,
+      onText:function(t){ if (askCtl===ctl) askOut.textContent = t.text; },
+      tools:[{name:'pull_books', description:'Slide these books out of the shelf so the visitor can see which projects the answer uses.',
+        inputSchema:{type:'object', properties:{ids:{type:'array', items:{type:'string'}}}, required:['ids']},
+        execute:function(input){ var ids = showPulled((input && input.ids) || []); addStep('done', 'The model pulled ' + ids.length + (ids.length===1 ? ' book' : ' books')); return {pulled: ids.map(function(id){ return byId[id].title; })}; }}]
+    }).then(function(r){
+      if (askCtl!==ctl) return;
+      askOut.textContent = (r && r.text ? r.text : '') + (r && r.truncated ? ' (cut short)' : '');
+      markStep(st, 'done', 'The model answered');
+    }).catch(function(err){
+      if (askCtl!==ctl && !(ctl.signal && ctl.signal.aborted)) return;
+      var code = err && err.code;
+      if (ctl.signal.aborted){ markStep(st, 'warn', 'Stopped'); return; }
+      markStep(st, 'warn', 'The model did not answer');
+      askErr.hidden=false;
+      askErr.textContent = code==='not_granted' ? 'AI answers were not allowed for this view. The matching books are still pulled out above.'
+        : code==='rate_limited' ? 'The AI model is rate limited right now. Wait a minute and ask again.'
+        : 'The AI model could not answer' + (err && err.message ? ': ' + err.message : '.') ;
+      if (code==='not_granted') sampleP = Promise.resolve(null);
+    }).then(function(){
+      if (askCtl===ctl){ askCtl=null; askStop.hidden=true; askOut.removeAttribute('aria-busy'); if (scene3d) scene3d.setThinking(false); }
+    });
+  });
+}
+$('ask-form').addEventListener('submit', function(e){ e.preventDefault(); ask($('ask-q').value); });
+askStop.addEventListener('click', stopAsk);
+
+/* ---------- the room ---------- */
+function initScene(){
+  var THREE = window.THREE;
+  var stage = $('stage'), canvas = $('room');
+  if (!THREE) return null;
+  var renderer;
+  try{ renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:false}); }
+  catch(e){ return null; }
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  var V3 = THREE.Vector3, Q = THREE.Quaternion;
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(28, 1, .1, 300);
+  var TV = Math.tan(14*Math.PI/180);
+  var col = function(h){ return new THREE.Color(h).convertSRGBToLinear(); };
+  var mat = function(h, rough){ return new THREE.MeshStandardMaterial({color:col(h), roughness: rough==null ? .82 : rough, metalness:0}); };
+  var glow = function(h){ return new THREE.MeshBasicMaterial({color:col(h)}); };
+  var maxAniso = renderer.capabilities.getMaxAnisotropy();
+  var seed = 7; var rnd = function(){ seed = (seed*16807) % 2147483647; return seed/2147483647; };
+
+  /* lights */
+  var hemi = new THREE.HemisphereLight(0xfff6e6, 0xb9a98c, .82); scene.add(hemi);
+  var sun = new THREE.DirectionalLight(0xffffff, .62);
+  sun.position.set(-11, 17, 24); sun.castShadow = true;
+  var smap = Math.min(window.innerWidth, window.innerHeight) < 700 ? 1536 : 2048; sun.shadow.mapSize.set(smap,smap);
+  var sc = sun.shadow.camera; sc.left=-16; sc.right=16; sc.top=13; sc.bottom=-10; sc.near=1; sc.far=90;
+  sun.shadow.bias = -.0006; sun.shadow.normalBias = .035;
+  scene.add(sun);
+  var lanternLight = new THREE.PointLight(0xffc27a, .3, 26, 2); scene.add(lanternLight);
+  var screenLight = new THREE.PointLight(0x9fc4ff, 0, 11, 2); scene.add(screenLight);
+  var moonLight = new THREE.PointLight(0x9db4ff, 0, 16, 2); scene.add(moonLight);
+
+  function addMesh(geo, m, x, y, z, parent, noShadow){
+    var me = new THREE.Mesh(geo, m); me.position.set(x||0,y||0,z||0);
+    if (!noShadow){ me.castShadow = true; me.receiveShadow = true; }
+    (parent||scene).add(me); return me;
+  }
+  function box(w,h,d,m,x,y,z,parent){ return addMesh(new THREE.BoxGeometry(w,h,d), m, x,y,z, parent); }
+  function cyl(rt,rb,h,m,x,y,z,parent,seg){ return addMesh(new THREE.CylinderGeometry(rt,rb,h,seg||24), m, x,y,z, parent); }
+  function ball(r,m,x,y,z,parent){ return addMesh(new THREE.SphereGeometry(r,28,20), m, x,y,z, parent); }
+
+  /* canvas helpers */
+  var FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+  var SERIF = 'Georgia,"Times New Roman",serif';
+  function texture(draw){
+    var cv = document.createElement('canvas'); draw(cv);
+    var tx = new THREE.CanvasTexture(cv); tx.encoding = THREE.sRGBEncoding; tx.anisotropy = maxAniso;
+    tx.userData = {redraw:function(){ draw(cv); tx.needsUpdate = true; }, canvas:cv};
+    return tx;
+  }
+  function wrapWords(x, text, maxW){
+    var words = text.split(' '), lines=[], cur='';
+    words.forEach(function(w){ var t = cur ? cur+' '+w : w; if (x.measureText(t).width > maxW && cur){ lines.push(cur); cur=w; } else cur=t; });
+    if (cur) lines.push(cur); return lines;
+  }
+  function rr(x,X,Y,w,h,r){ x.beginPath(); x.moveTo(X+r,Y); x.arcTo(X+w,Y,X+w,Y+h,r); x.arcTo(X+w,Y+h,X,Y+h,r); x.arcTo(X,Y+h,X,Y,r); x.arcTo(X,Y,X+w,Y,r); x.closePath(); }
+  function callLines(c){ var p=c.split('.'); var a=[p[0]]; if(p[1]) a.push('.'+p[1]); a.push('KIP'); return a; }
+  function washi(x,w,h,base){
+    x.fillStyle=base||'#F1EADA'; x.fillRect(0,0,w,h);
+    for (var i=0;i<260;i++){ x.strokeStyle='rgba(120,100,70,'+(.03+rnd()*.05)+')'; x.lineWidth=.6+rnd(); var px=rnd()*w, py=rnd()*h, a=rnd()*6.3, l=6+rnd()*22; x.beginPath(); x.moveTo(px,py); x.lineTo(px+Math.cos(a)*l, py+Math.sin(a)*l); x.stroke(); }
+  }
+  function seal(x,X,Y,s){
+    x.fillStyle='#C8402E'; rr(x,X,Y,s,s,s*.14); x.fill();
+    x.strokeStyle='#F1EADA'; x.lineWidth=s*.09; x.lineCap='round';
+    x.beginPath(); x.moveTo(X+s*.28,Y+s*.26); x.lineTo(X+s*.72,Y+s*.26); x.moveTo(X+s*.5,Y+s*.26); x.lineTo(X+s*.5,Y+s*.74); x.moveTo(X+s*.3,Y+s*.52); x.lineTo(X+s*.7,Y+s*.52); x.moveTo(X+s*.26,Y+s*.76); x.lineTo(X+s*.74,Y+s*.76); x.stroke();
+  }
+
+
+  /* ---------- room shell ---------- */
+  var FLOOR = -4.5, WALLZ = -1.0, BEAMY = 5.5, CEIL = 7.4;
+  var WOOD_D = '#5E4129', WOOD_M = '#8A6238', WOOD_L = '#B98C57';
+  scene.background = col('#D9CFB8');
+  addMesh(new THREE.PlaneGeometry(90,40), mat('#D9CFB8',.96), 0, 4, WALLZ, scene).castShadow=false;
+  var tatamiTx = texture(function(cv){
+    var w=cv.width=256, h=cv.height=512, x=cv.getContext('2d');
+    x.fillStyle='#BDBA83'; x.fillRect(0,0,w,h);
+    for (var i=0;i<h;i+=3){ x.fillStyle='rgba(90,95,40,'+(.05+rnd()*.07)+')'; x.fillRect(0,i,w,1.4); }
+    for (var j=0;j<900;j++){ x.fillStyle='rgba(255,255,220,'+(rnd()*.08)+')'; x.fillRect(rnd()*w, rnd()*h, 1+rnd()*10, 1); }
+    x.fillStyle='#2E3A30'; x.fillRect(0,0,13,h); x.fillRect(w-13,0,13,h);
+    x.fillStyle='rgba(255,255,255,.08)'; for (var k=0;k<h;k+=10){ x.fillRect(3,k,7,4); x.fillRect(w-10,k+5,7,4); }
+  });
+  tatamiTx.wrapS = tatamiTx.wrapT = THREE.RepeatWrapping; tatamiTx.repeat.set(15, 4);
+  var floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 40), new THREE.MeshStandardMaterial({map:tatamiTx, roughness:.95}));
+  floor.rotation.x = -Math.PI/2; floor.position.set(0, FLOOR, WALLZ+20); floor.receiveShadow = true; scene.add(floor);
+  var darkWood = mat(WOOD_D,.7), midWood = mat(WOOD_M,.72), lightWood = mat(WOOD_L,.7), steel = mat('#1E1E21',.5);
+  var ceil = new THREE.Mesh(new THREE.PlaneGeometry(90, 40), mat('#6B4C30',.9));
+  ceil.rotation.x = Math.PI/2; ceil.position.set(0, CEIL, WALLZ+20); scene.add(ceil);
+  for (var ri=0; ri<9; ri++) box(.3,.3,40,darkWood,-16+ri*4,CEIL-.15,WALLZ+20).castShadow=false;
+  box(90,.42,.12,darkWood,0,FLOOR+.21,WALLZ+.06);
+  box(90,.5,.3,darkWood,0,BEAMY,WALLZ+.15);
+  [-9.4, 10.95].forEach(function(px){ box(.55,CEIL-FLOOR,.34,darkWood,px,(CEIL+FLOOR)/2,WALLZ+.17); });
+
+  /* ---------- window: a day sky by day, tonight's moon after dark ---------- */
+  var WINX=4.95, WINY=3.6, WINW=3.7, WINH=2.7;
+  function moonPhase(){ var days=(Date.now()-Date.UTC(2000,0,6,18,14))/864e5; var p=(days/29.530588853)%1; return p<0 ? p+1 : p; }
+  var skyTx = texture(function(cv){
+    var w=cv.width=592, h=cv.height=432, x=cv.getContext('2d'), dark=isDark(), g, i, s=11;
+    var r2=function(){ s=(s*16807)%2147483647; return s/2147483647; };
+    var d=new Date(), hr=d.getHours()+d.getMinutes()/60;
+    g=x.createLinearGradient(0,0,0,h);
+    if (!dark){
+      g.addColorStop(0,'#5FA8EE'); g.addColorStop(1,'#DDEFFB'); x.fillStyle=g; x.fillRect(0,0,w,h);
+      var t=Math.max(.06,Math.min(.94,(hr-6.5)/12)), sx=w*(.08+.84*t), sy=h*(.66-.46*Math.sin(Math.PI*t));
+      g=x.createRadialGradient(sx,sy,4,sx,sy,h*.34); g.addColorStop(0,'rgba(255,248,214,.95)'); g.addColorStop(.25,'rgba(255,244,200,.45)'); g.addColorStop(1,'rgba(255,244,200,0)');
+      x.fillStyle=g; x.fillRect(0,0,w,h);
+      x.fillStyle='#FFFBEA'; x.beginPath(); x.arc(sx,sy,h*.062,0,6.3); x.fill();
+      [[.2,.3,1],[.62,.2,.8],[.84,.46,.65]].forEach(function(c){
+        x.fillStyle='rgba(255,255,255,.92)';
+        [[0,0,58,20],[-40,8,40,15],[42,7,44,16],[8,-13,34,16]].forEach(function(e){ x.beginPath(); x.ellipse(w*c[0]+e[0]*c[2], h*c[1]+e[1]*c[2], e[2]*c[2], e[3]*c[2], 0, 0, 6.3); x.fill(); });
+      });
+    } else {
+      g.addColorStop(0,'#040714'); g.addColorStop(1,'#18244E'); x.fillStyle=g; x.fillRect(0,0,w,h);
+      for (i=0;i<110;i++){ x.fillStyle='rgba(255,255,255,'+(.25+r2()*.7)+')'; var rs=r2()<.12 ? 1.9 : 1.1; x.beginPath(); x.arc(r2()*w, r2()*h*.8, rs, 0, 6.3); x.fill(); }
+      var mx=w*.68, my=h*.32, mr=h*.135, p=moonPhase(), k=Math.cos(2*Math.PI*p), waxing=p<.5;
+      g=x.createRadialGradient(mx,my,mr*.6,mx,my,mr*3.2); g.addColorStop(0,'rgba(190,205,255,.28)'); g.addColorStop(1,'rgba(190,205,255,0)');
+      x.fillStyle=g; x.fillRect(0,0,w,h);
+      x.fillStyle='#27325A'; x.beginPath(); x.arc(mx,my,mr,0,6.3); x.fill();
+      x.fillStyle='#F3EFDF'; x.beginPath();
+      if (waxing){ x.arc(mx,my,mr,-Math.PI/2,Math.PI/2,false); x.ellipse(mx,my,Math.max(.01,mr*Math.abs(k)),mr,0,Math.PI/2,Math.PI*1.5,k>0); }
+      else { x.arc(mx,my,mr,-Math.PI/2,Math.PI/2,true); x.ellipse(mx,my,Math.max(.01,mr*Math.abs(k)),mr,0,Math.PI/2,Math.PI*1.5,k<=0); }
+      x.closePath(); x.fill();
+    }
+    [[.78,dark?'#101A38':'#8FB7A6'],[.86,dark?'#0A1128':'#5E8F72']].forEach(function(hl,hi){
+      x.fillStyle=hl[1]; x.beginPath(); x.moveTo(0,h);
+      for (i=0;i<=40;i++){ var u=i/40; x.lineTo(u*w, h*hl[0]-Math.sin(u*5.2+hi*1.9)*h*.045-Math.sin(u*13+hi)*h*.014); }
+      x.lineTo(w,h); x.closePath(); x.fill();
+    });
+  });
+  var windowG = new THREE.Group(); windowG.position.set(WINX, WINY, WALLZ+.02); scene.add(windowG);
+  windowG.userData.caption = 'The window follows your local time: a day sky by day, tonight’s moon after dark.';
+  addMesh(new THREE.PlaneGeometry(WINW,WINH), new THREE.MeshBasicMaterial({map:skyTx}), 0,0,.01, windowG, true);
+  box(WINW+.34,.17,.2,darkWood,0,WINH/2+.085,.08,windowG); box(WINW+.6,.14,.36,darkWood,0,-WINH/2-.07,.16,windowG);
+  box(.17,WINH+.3,.2,darkWood,-WINW/2-.085,0,.08,windowG); box(.17,WINH+.3,.2,darkWood,WINW/2+.085,0,.08,windowG);
+  [-1,0,1].forEach(function(i){ box(.05,WINH,.06,midWood,i*WINW/4,0,.05,windowG); });
+  box(WINW,.05,.06,midWood,0,WINH*.17,.05,windowG);
+
+  /* ---------- ink scrolls, drawn here ---------- */
+  function scroll(x, top, w, h, mount, paint){
+    var tx = texture(function(cv){
+      var S=220, W=cv.width=Math.round(w*S), H=cv.height=Math.round(h*S), c=cv.getContext('2d');
+      c.fillStyle=mount; c.fillRect(0,0,W,H);
+      c.fillStyle='rgba(255,255,255,.07)'; for (var i=0;i<W;i+=14) for (var j=(i/14%2)*7;j<H;j+=14) c.fillRect(i,j,5,5);
+      var m=W*.11, pt=H*.13, pb=H*.11, pw=W-2*m, ph=H-pt-pb;
+      c.save(); c.translate(m,pt); c.beginPath(); c.rect(0,0,pw,ph); c.clip(); washi(c,pw,ph); paint(c,pw,ph); c.restore();
+      c.strokeStyle='rgba(0,0,0,.25)'; c.lineWidth=2; c.strokeRect(m,pt,pw,ph);
+    });
+    var g = new THREE.Group(); g.position.set(x, top-h/2, WALLZ+.05); scene.add(g);
+    addMesh(new THREE.PlaneGeometry(w,h), new THREE.MeshStandardMaterial({map:tx, roughness:.95}), 0,0,.02, g).castShadow=true;
+    var rodM = mat('#3A2A1E',.5);
+    var r1 = cyl(.055,.055,w+.24,rodM,0,h/2,.05,g,12); r1.rotation.z=Math.PI/2;
+    var r2 = cyl(.075,.075,w+.3,rodM,0,-h/2,.06,g,12); r2.rotation.z=Math.PI/2;
+    var s1 = box(.018,.6,.018,rodM,-w*.2,h/2+.27,.04,g); s1.rotation.z=-.62; s1.castShadow=false;
+    var s2 = box(.018,.6,.018,rodM, w*.2,h/2+.27,.04,g); s2.rotation.z=.62; s2.castShadow=false;
+    g.userData.label = true; return g;
+  }
+
+  var scrollK = scroll(.2, 4.8, 1.6, 4.15, '#3A2A1E', function(c,w,h){                /* Kenya */
+    var fw=w*.86, fh=fw*2/3, fx=(w-fw)/2, fy=h*.1, u=fh/20;
+    c.fillStyle='#15151A'; c.fillRect(fx,fy,fw,u*6);
+    c.fillStyle='#FBF8EF'; c.fillRect(fx,fy+u*6,fw,u);
+    c.fillStyle='#B5121B'; c.fillRect(fx,fy+u*7,fw,u*6);
+    c.fillStyle='#FBF8EF'; c.fillRect(fx,fy+u*13,fw,u);
+    c.fillStyle='#0B6B2E'; c.fillRect(fx,fy+u*14,fw,u*6);
+    var cx=fx+fw/2, cy=fy+fh/2;
+    [1,-1].forEach(function(s){                                                         /* crossed spears */
+      c.save(); c.translate(cx,cy); c.rotate(s*.62);
+      c.strokeStyle='rgba(0,0,0,.45)'; c.lineWidth=u*.95; c.lineCap='round'; c.beginPath(); c.moveTo(0,fh*.5); c.lineTo(0,-fh*.5); c.stroke();
+      c.strokeStyle='#FBF8EF'; c.lineWidth=u*.55; c.beginPath(); c.moveTo(0,fh*.5); c.lineTo(0,-fh*.44); c.stroke();
+      c.fillStyle='#FBF8EF'; c.beginPath(); c.moveTo(0,-fh*.6); c.lineTo(u*.85,-fh*.47); c.lineTo(0,-fh*.41); c.lineTo(-u*.85,-fh*.47); c.closePath(); c.fill();
+      c.restore();
+    });
+    var sh=fh*.66, sw=sh*.4;                                                            /* shield */
+    var shield=function(){ c.beginPath(); c.moveTo(cx,cy-sh/2); c.quadraticCurveTo(cx+sw*1.02,cy,cx,cy+sh/2); c.quadraticCurveTo(cx-sw*1.02,cy,cx,cy-sh/2); c.closePath(); };
+    c.save(); shield(); c.clip();
+    c.fillStyle='#B5121B'; c.fillRect(cx-sw,cy-sh/2,sw*2,sh);
+    c.fillStyle='#15151A';
+    [1,-1].forEach(function(s){ c.beginPath(); c.ellipse(cx+s*sw*.74,cy,sw*.42,sh*.3,0,0,6.3); c.fill(); });
+    c.strokeStyle='#FBF8EF'; c.lineWidth=u*.32;
+    [1,-1].forEach(function(s){ c.beginPath(); c.ellipse(cx+s*sw*.74,cy,sw*.42,sh*.3,0,0,6.3); c.stroke(); });
+    c.fillStyle='#FBF8EF'; c.beginPath(); c.ellipse(cx,cy,sw*.09,sh*.13,0,0,6.3); c.fill();
+    [1,-1].forEach(function(s){ c.beginPath(); c.ellipse(cx,cy+s*sh*.3,sw*.13,sh*.035,0,0,6.3); c.fill(); });
+    c.restore();
+    c.strokeStyle='rgba(0,0,0,.35)'; c.lineWidth=1.5; c.strokeRect(fx,fy,fw,fh);
+    /* acacia below, in ink */
+    var gy=h*.86, tx0=w*.5;
+    c.strokeStyle='rgba(22,22,26,.4)'; c.lineWidth=w*.008; c.beginPath(); c.moveTo(w*.08,gy); c.lineTo(w*.92,gy); c.stroke();
+    c.strokeStyle='rgba(22,22,26,.88)'; c.lineCap='round';
+    c.lineWidth=w*.03; c.beginPath(); c.moveTo(tx0,gy); c.quadraticCurveTo(tx0-w*.02,gy-h*.1,tx0+w*.02,gy-h*.17); c.stroke();
+    c.lineWidth=w*.016; [[-.2,-.235],[.22,-.24],[-.06,-.255],[.1,-.26]].forEach(function(b){ c.beginPath(); c.moveTo(tx0+w*.02,gy-h*.17); c.quadraticCurveTo(tx0+w*b[0]*.5,gy+h*(b[1]+.04),tx0+w*b[0],gy+h*b[1]); c.stroke(); });
+    c.fillStyle='rgba(22,22,26,.82)';
+    [[-.2,-.25,.17,.022],[.2,-.255,.18,.022],[0,-.275,.24,.026],[-.08,-.262,.12,.018],[.1,-.268,.13,.018]].forEach(function(e){ c.beginPath(); c.ellipse(tx0+w*e[0],gy+h*e[1],w*e[2],h*e[3],0,0,6.3); c.fill(); });
+    seal(c, w*.74, h*.9, w*.12);
+  });
+  scrollK.userData.caption = 'Kenya. The flag over an acacia, in ink.';
+  /* framed portrait */
+  var scrollA = new THREE.Group(); scrollA.position.set(2.0, 3.5, WALLZ+.05); scene.add(scrollA);
+  scrollA.userData.caption = 'Caleb Kipchirchir.';
+  (function(){
+    var pw=1.2, ph=1.6, frame=mat('#2A1D14',.5);
+    box(pw+.34,ph+.34,.08,frame,0,0,.04,scrollA);
+    addMesh(new THREE.PlaneGeometry(pw+.2,ph+.2), mat('#F1EADA',.95), 0,0,.085, scrollA, true);
+    var pm=new THREE.MeshStandardMaterial({color:col('#CFC6B4'), roughness:.9});
+    addMesh(new THREE.PlaneGeometry(pw,ph), pm, 0,0,.09, scrollA, true);
+    new THREE.TextureLoader().load('img/portrait.webp', function(tx){ tx.encoding=THREE.sRGBEncoding; tx.anisotropy=maxAniso; pm.map=tx; pm.color.set(0xffffff); pm.needsUpdate=true; });
+  })();
+  var scrollB = scroll(7.8, 4.75, 1.3, 2.9, '#7A5A36', function(c,w,h){             /* candlesticks */
+    var d=[[.80,.70,.84,.66],[.70,.74,.76,.62],[.74,.60,.78,.56],[.60,.52,.64,.47],[.52,.57,.60,.50],[.57,.44,.60,.40],[.44,.34,.48,.30],[.34,.39,.42,.31],[.39,.24,.42,.19]];
+    var n=d.length, bw=w*.058, gap=(w*.8-bw*n)/(n-1);
+    c.lineCap='round';
+    d.forEach(function(k,i){
+      var X=w*.1+i*(bw+gap), o=k[0]*h, cl=k[1]*h, hi=Math.min(k[3],k[1],k[0])*h, lo=Math.max(k[2],k[0],k[1])*h, up=cl<o;
+      c.strokeStyle='rgba(22,22,26,.9)'; c.lineWidth=w*.012;
+      c.beginPath(); c.moveTo(X+bw/2,hi-h*.02); c.lineTo(X+bw/2,lo+h*.02); c.stroke();
+      var top=Math.min(o,cl), bh=Math.abs(o-cl);
+      if (up){ c.fillStyle='#F1EADA'; c.fillRect(X,top,bw,bh); c.lineWidth=w*.016; c.strokeRect(X,top,bw,bh); }
+      else { c.fillStyle='rgba(22,22,26,.92)'; c.fillRect(X,top,bw,bh); }
+    });
+    c.strokeStyle='rgba(22,22,26,.35)'; c.lineWidth=w*.008; c.beginPath(); c.moveTo(w*.06,h*.9); c.lineTo(w*.94,h*.9); c.stroke();
+    seal(c, w*.12, h*.12, w*.14);
+  });
+  scrollB.userData.caption = 'Rice market. Rising candles are hollow and falling ones are filled, as in my dashboard.';
+  var scrollC = scroll(9.45, 4.75, 1.3, 2.9, '#3F5A45', function(c,w,h){            /* mountain at sunrise */
+    c.fillStyle='#C8402E'; c.beginPath(); c.arc(w*.68,h*.24,w*.13,0,6.3); c.fill();
+    [[.62,.3,'rgba(40,44,54,.28)'],[.7,.52,'rgba(34,38,48,.5)'],[.8,.36,'rgba(22,24,30,.82)']].forEach(function(r,ri){
+      var base=r[0]*h, g=c.createLinearGradient(0,base-h*.34,0,base+h*.12); g.addColorStop(0,r[2]); g.addColorStop(1,'rgba(241,234,218,0)');
+      c.fillStyle=g; c.beginPath(); c.moveTo(0,base+h*.14);
+      for (var i=0;i<=24;i++){ var t=i/24, peak=Math.exp(-Math.pow((t-r[1])/.22,2)); c.lineTo(t*w, base-h*(.05+.27*peak)-Math.sin(t*17+ri*2)*h*.012-rnd()*h*.008); }
+      c.lineTo(w,base+h*.14); c.closePath(); c.fill();
+    });
+    seal(c, w*.14, h*.84, w*.14);
+  });
+  scrollC.userData.caption = 'Mountain at sunrise. Ink wash drawn in code.';
+
+  /* ---------- bookcase ---------- */
+  var W=6.6, H=8.69, D=1.9, SIDE=.2, BOARD=.26, PITCH=2.81, BD=1.5, C=.05, CASEX=-4.5;
+  var caseG = new THREE.Group(); caseG.position.set(CASEX, FLOOR+.16+H/2, 0); scene.add(caseG);
+  var inside = mat('#6E4D2C', .9);
+  function cbox(w,h,d,m,x,y,z,parent){ return box(w,h,d,m,x,y,z,parent||caseG); }
+  cbox(W,H,.08,inside,0,0,-D/2+.04);
+  cbox(SIDE,H,D,lightWood,-(W/2-SIDE/2),0,0); cbox(SIDE,H,D,lightWood,(W/2-SIDE/2),0,0);
+  for (var bi=0;bi<4;bi++) cbox(W-2*SIDE,BOARD,D,lightWood,0,-H/2+BOARD/2+bi*PITCH,0);
+  cbox(W+.3,.14,D+.16,midWood,0,H/2+.07,0);
+  [-1,1].forEach(function(s){ cbox(.3,.16,D-.2,darkWood,s*(W/2-.35),-H/2-.08,0); });
+  var floorY = function(s){ return -H/2 + BOARD + (2-s)*PITCH; };
+  var boardY = function(s){ return -H/2 + BOARD/2 + (2-s)*PITCH; };
+
+  function drawSpine(b){ return function(cv){
+    var S=256, w=cv.width=Math.round(b.t*S), h=cv.height=Math.round(b.h*S), x=cv.getContext('2d');
+    x.fillStyle=b.color; x.fillRect(0,0,w,h);
+    var top=h*.055;
+    x.fillStyle=b.ink; x.globalAlpha=.9; x.fillRect(0,top,w,6); x.fillRect(0,top+14,w,2); x.globalAlpha=1;
+    var lines=callLines(b.call), sw=Math.min(w*.84,150), fs=Math.min(sw*.3,34), sh=fs*1.12*lines.length+fs*.5;
+    var sx=(w-sw)/2, sy=h-sh-h*.05;
+    x.fillStyle='#FBFAF4'; rr(x,sx,sy,sw,sh,5); x.fill();
+    x.fillStyle='#1C1F3A'; x.textAlign='center'; x.textBaseline='middle'; x.font='600 '+fs+'px '+FONT;
+    lines.forEach(function(l,i){ x.fillText(l, w/2, sy+fs*.25+fs*1.12*(i+.5)); });
+    var a0=top+34, avail=sy-a0-22;
+    var fit=function(ls,f){ for(;f>14;f-=2){ x.font='700 '+f+'px '+FONT; if (Math.max.apply(null,ls.map(function(l){return x.measureText(l).width;}))<=avail) break; } return f; };
+    var lines1=[b.spine], f=fit(lines1,Math.min(w*.5,104)), words=b.spine.split(' ');
+    if (words.length>1){
+      var best=null;
+      for (var k=1;k<words.length;k++){ var L=words.slice(0,k).join(' '), Rr=words.slice(k).join(' '), dd=Math.abs(L.length-Rr.length); if(!best||dd<best.d) best={d:dd,l:[L,Rr]}; }
+      var f2=fit(best.l,Math.min(w*.33,104));
+      if (f2>f*1.25){ lines1=best.l; f=f2; }
+    }
+    x.font='700 '+f+'px '+FONT;
+    x.save(); x.translate(w/2, a0+avail/2); x.rotate(Math.PI/2); x.fillStyle=b.ink;
+    if (lines1.length===1) x.fillText(lines1[0],0,f*.04); else { x.fillText(lines1[0],0,-f*.52); x.fillText(lines1[1],0,f*.56); }
+    x.restore();
+  }; }
+  function drawCover(b){ return function(cv){
+    var S=300, w=cv.width=Math.round((BD-C)*S), h=cv.height=Math.round(b.h*S), x=cv.getContext('2d');
+    x.fillStyle=b.color; x.fillRect(0,0,w,h);
+    var m=w*.09;
+    x.strokeStyle=b.ink; x.globalAlpha=.9; x.lineWidth=3; x.strokeRect(m*.55,m*.55,w-m*1.1,h-m*1.1); x.globalAlpha=1;
+    x.fillStyle=b.ink; x.textAlign='left'; x.textBaseline='alphabetic';
+    var f=88, lines;
+    do { x.font='700 '+f+'px '+FONT; lines=wrapWords(x,b.title,w-m*2.4); f-=4; }
+    while ((lines.length>4 || lines.some(function(l){return x.measureText(l).width>w-m*2.4;})) && f>30);
+    f+=4; var y=m*1.4+f*.9;
+    lines.forEach(function(l){ x.fillText(l,m*1.2,y); y+=f*1.0; });
+    x.fillRect(m*1.2,y-f*.45,w*.22,5);
+    x.font='italic 400 '+Math.round(w*.06)+'px '+SERIF;
+    wrapWords(x,b.sub,w-m*2.4).slice(0,3).forEach(function(l,i){ x.fillText(l,m*1.2,y+f*.25+i*w*.08); });
+    x.font='600 '+Math.round(w*.066)+'px '+FONT;
+    x.fillText('Caleb Kipchirchir', m*1.2, h-m*1.35);
+    x.textAlign='right'; x.fillText(b.call, w-m*1.2, h-m*1.35);
+  }; }
+  function drawTitlePage(b){ return function(cv){
+    var S=300, w=cv.width=Math.round((BD-C-.08)*S), h=cv.height=Math.round((b.h-.1)*S), x=cv.getContext('2d');
+    x.fillStyle='#F6F2E6'; x.fillRect(0,0,w,h);
+    var g=x.createLinearGradient(0,0,w*.12,0); g.addColorStop(0,'rgba(60,50,30,.22)'); g.addColorStop(1,'rgba(60,50,30,0)');
+    x.fillStyle=g; x.fillRect(0,0,w*.12,h);
+    x.fillStyle='#1B2238'; x.textAlign='center'; x.textBaseline='alphabetic';
+    var f=56, lines;
+    do { x.font='600 '+f+'px '+SERIF; lines=wrapWords(x,b.title,w*.74); f-=3; }
+    while ((lines.length>3 || lines.some(function(l){return x.measureText(l).width>w*.74;})) && f>24);
+    f+=3; var pic=b.plateImg, y=h*(pic ? .2 : .3);
+    lines.forEach(function(l){ x.fillText(l,w*.53,y); y+=f*1.12; });
+    var light={'#EFE7D6':1,'#FAFAF5':1,'#F3EEDD':1,'#E6D9B0':1};
+    x.fillStyle=light[b.color] ? b.ink : b.color; x.fillRect(w*.53-22,y-f*.45,44,5);
+    if (pic){
+      var bw=w*.78, bh=h*.8-y-f*.2, sc2=Math.min(bw/pic.naturalWidth, bh/pic.naturalHeight);
+      var iw=pic.naturalWidth*sc2, ih=pic.naturalHeight*sc2, ix=w*.53-iw/2, iy=y+f*.15+(bh-ih)/2;
+      x.fillStyle='#fff'; x.fillRect(ix,iy,iw,ih); x.drawImage(pic,ix,iy,iw,ih);
+      x.strokeStyle='rgba(27,34,56,.55)'; x.lineWidth=2; x.strokeRect(ix,iy,iw,ih);
+    } else {
+      x.fillStyle='#4B5468'; x.font='italic 400 '+Math.round(w*.055)+'px '+SERIF;
+      wrapWords(x,b.sub,w*.7).slice(0,3).forEach(function(l,i){ x.fillText(l,w*.53,y+f*.5+i*w*.075); });
+    }
+    x.fillStyle='#1B2238'; x.font='500 '+Math.round(w*.058)+'px '+SERIF;
+    x.fillText('Caleb Kipchirchir', w*.53, h*.86);
+    x.fillStyle='#4B5468'; x.font='400 '+Math.round(w*.046)+'px '+SERIF;
+    x.fillText('Nairobi and Eldoret', w*.53, h*.86+w*.075);
+  }; }
+  function drawEndpaper(b){ return function(cv){
+    var S=300, w=cv.width=Math.round((BD-C)*S), h=cv.height=Math.round(b.h*S), x=cv.getContext('2d');
+    x.fillStyle=b.ink; x.fillRect(0,0,w,h);
+    x.strokeStyle=b.color; x.globalAlpha=.2; x.lineWidth=2;                     /* seigaiha: overlapping wave arcs */
+    for (var row=0; row*26<h+40; row++) for (var cx=(row%2?0:26); cx<w+52; cx+=52){ for (var r=24;r>4;r-=8){ x.beginPath(); x.arc(cx,row*26,r,Math.PI,0); x.stroke(); } }
+    x.globalAlpha=1;
+    var pw=w*.56, ph=pw*.74, X=(w-pw)/2, Y=h*.56;
+    x.fillStyle='#F6F2E6'; rr(x,X,Y,pw,ph,6); x.fill();
+    x.strokeStyle='#1B2238'; x.lineWidth=2; rr(x,X+10,Y+10,pw-20,ph-20,3); x.stroke();
+    x.fillStyle='#1B2238'; x.textAlign='center'; x.textBaseline='alphabetic';
+    x.font='italic 400 '+Math.round(pw*.1)+'px '+SERIF; x.fillText('From the library of', w/2, Y+ph*.34);
+    x.font='700 '+Math.round(pw*.2)+'px '+FONT; x.fillText('C-Sawe', w/2, Y+ph*.62);
+    x.font='600 '+Math.round(pw*.09)+'px '+FONT; x.fillText(b.call+' KIP', w/2, Y+ph*.82);
+  }; }
+
+  /* shelf tags */
+  ['Machine learning','Products and client work','Systems, games and graphics'].forEach(function(name,s){
+    var tx = texture(function(cv){
+      var x=cv.getContext('2d'), f=40; x.font='600 '+f+'px '+FONT;
+      var w=cv.width=Math.ceil(x.measureText(name).width+52), h=cv.height=68; x=cv.getContext('2d');
+      x.fillStyle='#F1EADA'; x.fillRect(0,0,w,h); x.strokeStyle='rgba(60,40,20,.5)'; x.lineWidth=3; x.strokeRect(1.5,1.5,w-3,h-3);
+      x.fillStyle='#1C1F3A'; x.font='600 '+f+'px '+FONT; x.textAlign='center'; x.textBaseline='middle'; x.fillText(name,w/2,h/2+2);
+    });
+    var ph=.17, pw=ph*tx.image.width/tx.image.height;
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(pw,ph), new THREE.MeshStandardMaterial({map:tx, roughness:.8}));
+    m.position.set(-W/2+SIDE+.14+pw/2, boardY(s), D/2+.006); caseG.add(m);
+  });
+
+  var paperM = mat('#F1ECDD', .95), edgeM = mat('#E3DCC8', .95);
+  var bookGroups = [];
+  function makeBook(b){
+    var g = new THREE.Group(), t=b.t, h=b.h, d=BD;
+    var cover = mat(b.color, .78), end = new THREE.MeshStandardMaterial({map:texture(drawEndpaper(b)), roughness:.9});
+    var spineM = new THREE.MeshStandardMaterial({map:texture(drawSpine(b)), roughness:.78});
+    var coverM = new THREE.MeshStandardMaterial({map:texture(drawCover(b)), roughness:.78});
+    var pageTx = texture(drawTitlePage(b));
+    var pageM  = new THREE.MeshStandardMaterial({map:pageTx, roughness:.95});
+    if (b.plate){ var im=new Image(); im.onload=function(){ b.plateImg=im; pageTx.userData.redraw(); }; im.src=b.plate; }
+    box(C,h,d-C,cover,-t/2+C/2,0,-C/2,g);
+    box(t,h,C,[cover,cover,cover,cover,spineM,cover],0,0,d/2-C/2,g);
+    box(t-2*C,h-.1,d-C-.08,[pageM,paperM,edgeM,edgeM,paperM,edgeM],0,0,(.08-C)/2,g);
+    var pivot = new THREE.Group(); pivot.position.set(t/2-C/2,0,d/2-C); g.add(pivot);
+    box(C,h,d-C,[coverM,end,cover,cover,cover,cover],0,0,-(d-C)/2,pivot);
+    g.userData.book = b; b.group3=g; b.pivot=pivot;
+    caseG.add(g); bookGroups.push(g);
+  }
+  var GAP=.035, innerL=-W/2+SIDE+.14, innerR=W/2-SIDE-.14, zRest=D/2-.12-BD/2;
+  var qY90 = new Q().setFromAxisAngle(new V3(0,1,0), -Math.PI/2);
+  function rowWidth(ids){ return ids.reduce(function(a,id){ return a+byId[id].t+GAP; },0)-GAP; }
+  function placeRow(ids, x, s){
+    ids.forEach(function(id){ var b=byId[id]; b.rest=new V3(x+b.t/2, floorY(s)+b.h/2, zRest); b.restQ=new Q(); x+=b.t+GAP; });
+    return x-GAP;
+  }
+  function placeFace(id, cx, s){
+    var b=byId[id], a=.13;
+    b.restQ = new Q().setFromAxisAngle(new V3(1,0,0), -a).multiply(qY90);
+    b.rest = new V3(cx, floorY(s)+(b.h/2)*Math.cos(a)+(b.t/2)*Math.sin(a), .12);
+  }
+  var faceX = innerR-BD/2-.03;
+  var topEnd = placeRow(['thesis','diabetes','sortline','queues'], innerL, 0);
+  placeFace('authors-note', faceX, 0);
+  var midIds = ['mosop-agent','agro-ai','ops-network','vilcom'];
+  var midStart = innerR-rowWidth(midIds);
+  placeRow(midIds, midStart, 1);
+  (function(){ var b=byId['mpesa'], a=.16;
+    b.restQ = new Q().setFromAxisAngle(new V3(0,0,1), -a);
+    b.rest = new V3(midStart-(b.t/2*Math.cos(a)+b.h/2*Math.sin(a))-.012, floorY(1)+b.t/2*Math.sin(a)+b.h/2*Math.cos(a), zRest);
+  })();
+  placeRow(['last-clue','load-balancer','ics-chain','waste-app','shorter-works'], innerL, 2);
+  placeFace('library-card', faceX, 2);
+  BOOKS.forEach(function(b){
+    makeBook(b);
+    b.group3.position.copy(b.rest); b.group3.quaternion.copy(b.restQ);
+    b.vel = new V3(); b.stage = 0; b.cover = 0; b.coverV = 0;
+  });
+
+  /* on the shelves: a sprout and a celadon vase */
+  (function(){
+    var x=(topEnd+faceX-BD/2)/2, y=floorY(0), g=new THREE.Group(); g.position.set(x,y,.15); caseG.add(g);
+    cyl(.3,.23,.44,mat('#3D4A5C',.6),0,.22,0,g,28);
+    cyl(.27,.27,.02,mat('#3A2A22',1),0,.44,0,g,28);
+    cyl(.022,.028,.6,mat('#2E8B57',.7),0,.74,0,g,10);
+    [-1,1].forEach(function(sg){ var leaf=ball(.3,mat('#4E9B63',.6),sg*.24,1.1+(sg>0?.06:0),0,g); leaf.scale.set(1,.16,.5); leaf.rotation.z=sg*.75; });
+    var bx=innerL+.6, by=floorY(1), cel=mat('#A9C9B7',.35);
+    ball(.42,cel,bx,by+.4,.15,caseG).scale.set(1,.95,1);
+    cyl(.14,.2,.3,cel,bx,by+.86,.15,caseG,24);
+    cyl(.2,.26,.06,cel,bx,by+.03,.15,caseG,24);
+  })();
+
+
+  /* ---------- the desk ---------- */
+  var DESKX=4.95, DESKW=7.5, DESKD=3.0, DESKTOP=FLOOR+3.55, DESKZ=WALLZ+.3+DESKD/2;
+  box(DESKW,.18,DESKD,lightWood,DESKX,DESKTOP-.09,DESKZ);
+  [-1,1].forEach(function(s){
+    var lx=DESKX+s*(DESKW/2-.75);
+    box(.3,DESKTOP-FLOOR-.3,.24,steel,lx,(DESKTOP-.18+FLOOR+.12)/2,DESKZ);
+    box(.34,.12,2.6,steel,lx,FLOOR+.06,DESKZ);
+    box(.5,.1,1.9,steel,lx,DESKTOP-.23,DESKZ);
+  });
+  box(DESKW-1.6,.16,.1,steel,DESKX,DESKTOP-.4,DESKZ-.2);
+  box(4.4,.22,.5,steel,DESKX,DESKTOP-.36,DESKZ-1.0);                                   /* cable tray */
+  box(4.7,.025,1.5,mat('#26262B',.95),DESKX-.25,DESKTOP+.013,DESKZ+.6);               /* desk mat */
+  /* main monitor: the project list */
+  var bezel = mat('#161618',.4), SCRW=3.9, SCRH=1.7, SCRX=4.7, SCRY=DESKTOP+.62+SCRH/2, SCRZ=DESKZ-.75;
+  box(.5,.06,.5,steel,SCRX,DESKTOP+.03,SCRZ-.25);
+  cyl(.07,.07,1.3,steel,SCRX,DESKTOP+.68,SCRZ-.25,scene,16);
+  box(.4,.3,.3,steel,SCRX,SCRY,SCRZ-.14);
+  box(SCRW+.12,SCRH+.12,.08,bezel,SCRX,SCRY,SCRZ);
+  var slideCv = document.createElement('canvas'); slideCv.width=1192; slideCv.height=520;
+  var slideTx = new THREE.CanvasTexture(slideCv); slideTx.encoding = THREE.sRGBEncoding; slideTx.anisotropy = maxAniso;
+  var screen = addMesh(new THREE.PlaneGeometry(SCRW,SCRH), new THREE.MeshBasicMaterial({map:slideTx}), SCRX,SCRY,SCRZ+.045, scene, true);
+  screen.userData.kind = 'screen';
+  box(2.1,.07,.13,steel,SCRX,SCRY+SCRH/2+.1,SCRZ+.08);                                 /* light bar */
+  var barGlow = addMesh(new THREE.PlaneGeometry(2.0,.05), glow('#FFE9C4'), SCRX,SCRY+SCRH/2+.062,SCRZ+.1, scene, true); barGlow.rotation.x=Math.PI/2;
+  /* tall monitor: an example automation run */
+  var autoCv = document.createElement('canvas'); autoCv.width=520; autoCv.height=900;
+  var autoTx = new THREE.CanvasTexture(autoCv); autoTx.encoding = THREE.sRGBEncoding; autoTx.anisotropy = maxAniso;
+  var tallG = new THREE.Group(); tallG.position.set(7.72, DESKTOP+.38+1.3, DESKZ-.55); tallG.rotation.y=-.34; scene.add(tallG);
+  box(1.56,2.66,.08,bezel,0,0,0,tallG);
+  var autoScreen = addMesh(new THREE.PlaneGeometry(1.44,2.5), new THREE.MeshBasicMaterial({map:autoTx}), 0,0,.045, tallG, true);
+  autoScreen.userData.kind = 'auto';
+  cyl(.06,.06,1.5,steel,0,-.95,-.2,tallG,16); box(.45,.06,.45,steel,0,-1.65,-.2,tallG); box(.3,.25,.25,steel,0,-.2,-.12,tallG);
+  /* keyboard, mouse, notebook */
+  var keysTx = texture(function(cv){
+    var w=cv.width=420, h=cv.height=150, x=cv.getContext('2d'); x.fillStyle='#232327'; x.fillRect(0,0,w,h);
+    for (var r=0;r<5;r++) for (var k=0;k<15;k++){
+      if (r===4 && k>3 && k<10){ if (k===4){ x.fillStyle='#E9E9EC'; rr(x,10+k*27,9+r*27.5,27*6-5,22,4); x.fill(); } continue; }
+      x.fillStyle = (k===0 || k===14 || (r===4 && (k<4 || k>9))) ? '#8E8E93' : '#E9E9EC'; rr(x,10+k*27,9+r*27.5,22,22,4); x.fill();
+    }
+  });
+  var kbSide = mat('#232327',.5);
+  box(1.85,.1,.66,[kbSide,kbSide,new THREE.MeshStandardMaterial({map:keysTx,roughness:.6}),kbSide,kbSide,kbSide],SCRX-.25,DESKTOP+.075,DESKZ+.72);
+  ball(.14,mat('#E9E9EC',.4),SCRX+1.25,DESKTOP+.07,DESKZ+.75).scale.set(.72,.42,1.15);
+  var nb=box(.85,.05,1.15,mat('#2C4A6E',.8),SCRX+2.15,DESKTOP+.05,DESKZ+.85); nb.rotation.y=-.18;
+  var pen=cyl(.02,.02,.85,mat('#E0B04A',.4),SCRX+2.0,DESKTOP+.1,DESKZ+.8,scene,10); pen.rotation.x=Math.PI/2; pen.rotation.z=.3;
+  /* tea */
+  (function(){
+    var x=DESKX-3.05, z=DESKZ+.85, iron=mat('#26262A',.5);
+    box(1.15,.04,.8,darkWood,x,DESKTOP+.02,z);
+    ball(.24,iron,x-.2,DESKTOP+.25,z-.05).scale.set(1,.82,1);
+    cyl(.07,.07,.05,iron,x-.2,DESKTOP+.46,z-.05,scene,16);
+    var sp=cyl(.03,.045,.26,iron,x+.06,DESKTOP+.3,z-.05,scene,10); sp.rotation.z=-1.0;
+    addMesh(new THREE.TorusGeometry(.2,.018,8,24,Math.PI), iron, x-.2,DESKTOP+.4,z-.05);
+    cyl(.1,.08,.13,mat('#EFE9DA',.5),x+.3,DESKTOP+.105,z+.2,scene,20); cyl(.085,.085,.01,mat('#7C8B3A',.4),x+.3,DESKTOP+.165,z+.2,scene,20);
+  })();
+  /* bonsai */
+  (function(){
+    var x=DESKX-3.1, z=DESKZ-.75, y=DESKTOP, bark=mat('#4A3424',.9);
+    box(.85,.24,.5,mat('#3D4A5C',.55),x,y+.12,z); box(.78,.02,.44,mat('#5C5A3A',1),x,y+.245,z);
+    var t1=cyl(.06,.09,.6,bark,x-.05,y+.52,z,scene,10); t1.rotation.z=.35;
+    var t2=cyl(.045,.06,.55,bark,x+.02,y+.98,z,scene,10); t2.rotation.z=-.5;
+    var t3=cyl(.03,.045,.45,bark,x-.3,y+.82,z,scene,8); t3.rotation.z=1.15;
+    [[.22,1.3,.5,'#3F7D4E'],[-.55,.95,.36,'#4E8F5A'],[.5,1.0,.3,'#356E45'],[-.05,1.52,.3,'#4E8F5A']].forEach(function(f){ ball(f[2],mat(f[3],.85),x+f[0],y+f[1],z).scale.set(1,.5,.85); });
+  })();
+  /* the desk robot: it is the Ask button */
+  var robot = new THREE.Group(); robot.position.set(DESKX-2.15, DESKTOP, DESKZ+.2); robot.rotation.y=.25; scene.add(robot);
+  robot.userData.kind = 'robot';
+  var shell = mat('#F2F2F4',.35), eyeM = glow('#8FD8FF'), tipM = glow('#8FD8FF');
+  ball(.3,shell,0,.29,0,robot).scale.set(1,.95,.95);
+  [-1,1].forEach(function(s){ ball(.09,shell,s*.31,.3,.02,robot).scale.set(.7,1.3,.9); });
+  var head = new THREE.Group(); head.position.set(0,.74,0); robot.add(head);
+  ball(.25,shell,0,0,0,head).scale.set(1.08,.9,1);
+  ball(.2,mat('#141416',.25),0,.0,.12,head).scale.set(1,.6,.62);
+  var eyes=[-1,1].map(function(s){ return addMesh(new THREE.SphereGeometry(.036,12,10), eyeM, s*.08,.0,.238, head, true); });
+  cyl(.012,.012,.16,steel,0,.29,0,head,8);
+  var tip = addMesh(new THREE.SphereGeometry(.04,12,10), tipM, 0,.39,0, head, true);
+  var bubbleTx = texture(function(cv){
+    var w=cv.width=560, h=cv.height=190, x=cv.getContext('2d'); x.clearRect(0,0,w,h);
+    x.fillStyle='#FFFFFF'; x.strokeStyle='rgba(0,0,0,.22)'; x.lineWidth=3;
+    rr(x,8,8,w-16,118,56); x.fill(); x.stroke();
+    var tx=w*.78;
+    x.beginPath(); x.moveTo(tx-22,122); x.lineTo(tx,170); x.lineTo(tx+22,122); x.closePath(); x.fill();
+    x.beginPath(); x.moveTo(tx-22,125); x.lineTo(tx,170); x.lineTo(tx+22,125); x.stroke();
+    x.fillRect(tx-20,116,40,10);
+    x.fillStyle='#1C1C1E'; x.font='700 46px '+FONT; x.textAlign='center'; x.textBaseline='middle'; x.fillText('Ask any question', w/2, 68);
+  });
+  var bubble = new THREE.Sprite(new THREE.SpriteMaterial({map:bubbleTx, transparent:true, depthWrite:false}));
+  bubble.scale.set(1.9,.645,1); bubble.position.set(-.53,1.62,0); robot.add(bubble);
+  /* PC under the desk, chair to the side */
+  box(.8,1.9,1.7,mat('#1A1A1D',.45),DESKX+2.2,FLOOR+1.07,DESKZ-.3); box(.8,.12,1.7,steel,DESKX+2.2,FLOOR+.06,DESKZ-.3);
+  addMesh(new THREE.PlaneGeometry(.05,1.3), glow('#8FD8FF'), DESKX+1.95,FLOOR+1.1,DESKZ+.555, scene, true);
+  (function(){
+    var g=new THREE.Group(); g.position.set(9.85, FLOOR, DESKZ+2.2); g.rotation.y=Math.PI+.55; scene.add(g);
+    var fabric=mat('#2A2A2F',.95), mesh=mat('#3A3A41',.9);
+    for (var i=0;i<5;i++){ var a=i*Math.PI*2/5, leg=box(.95,.08,.13,steel,Math.cos(a)*.47,.16,Math.sin(a)*.47,g); leg.rotation.y=-a; ball(.09,steel,Math.cos(a)*.95,.09,Math.sin(a)*.95,g); }
+    cyl(.07,.09,1.5,steel,0,.95,0,g,14);
+    var seat=box(1.9,.24,1.8,fabric,0,1.85,0,g);
+    var back=box(1.75,2.4,.16,mesh,0,3.35,-.92,g); back.rotation.x=-.1;
+    box(.2,.9,.14,steel,0,2.2,-.92,g);
+    [-1,1].forEach(function(s){ box(.12,.75,.12,steel,s*.98,2.3,-.1,g); box(.16,.08,1.0,fabric,s*.98,2.7,0,g); });
+  })();
+  /* paper lantern on the floor */
+  var lanternPaper = glow('#FFE9B8');
+  (function(){
+    var x=.2, z=1.3, y=FLOOR, h=2.0, w=.82;
+    box(w+.1,.1,w+.1,darkWood,x,y+.05,z); box(w+.1,.08,w+.1,darkWood,x,y+.36+h,z);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(c){ box(.07,h+.26,.07,darkWood,x+c[0]*w/2,y+.1+(h+.26)/2,z+c[1]*w/2); });
+    [.9,1.6].forEach(function(dy){ box(w,.04,.04,darkWood,x,y+dy,z+w/2); });
+    addMesh(new THREE.BoxGeometry(w-.06,h,w-.06), lanternPaper, x,y+.3+h/2,z, scene, true);
+    lanternLight.position.set(x, y+1.5, z+.9);
+  })();
+  /* floor cushion, empty while the cat is out riding */
+  (function(){
+    var x=2.2, z=DESKZ+3.3, y=FLOOR;
+    var cu=box(2.3,.26,2.3,mat('#2C4A6E',.95),x,y+.13,z); cu.rotation.y=.12;
+  })();
+  /* robot vacuum on its rounds */
+  var vac = new THREE.Group(); vac.position.set(-6, FLOOR, 6.4); scene.add(vac);
+  vac.userData.kind = 'vacuum';
+  var disc = new THREE.Group(); vac.add(disc);
+  cyl(.52,.52,.16,mat('#2B2B30',.45),0,.1,0,disc,36); cyl(.3,.3,.03,mat('#48484F',.4),0,.195,0,disc,28);
+  addMesh(new THREE.SphereGeometry(.045,10,8), glow('#8FD8FF'), 0,.2,.36, disc, true);
+  /* the cat rides it */
+  var cat = new THREE.Group(); cat.position.set(0,.2,0); cat.rotation.y=Math.PI/2; vac.add(cat);
+  var fur=mat('#E7DFCF',.95), patch=mat('#C9A27A',.95);
+  ball(.3,fur,0,.3,-.04,cat).scale.set(.85,1.05,.95);
+  ball(.2,fur,0,.2,.2,cat).scale.set(.9,.9,.7);
+  var catHead = new THREE.Group(); catHead.position.set(0,.72,.1); cat.add(catHead);
+  ball(.21,fur,0,0,0,catHead).scale.set(1.05,.9,.95);
+  [-1,1].forEach(function(sg){ var e=addMesh(new THREE.ConeGeometry(.08,.17,10), patch, sg*.12,.19,0,catHead); e.rotation.z=sg*-.2;
+    addMesh(new THREE.SphereGeometry(.026,10,8), mat('#1C1C1E',.3), sg*.08,.03,.19, catHead, true); });
+  addMesh(new THREE.SphereGeometry(.022,8,6), mat('#D98C8C',.5), 0,-.04,.2, catHead, true);
+  var catTail = new THREE.Group(); catTail.position.set(0,.12,-.28); cat.add(catTail);
+  var tl=cyl(.035,.05,.55,patch,0,.25,-.06,catTail,10); tl.rotation.x=-.3;
+  var vacDir=1, vacPause=0;
+
+  /* ---------- what the two screens show ---------- */
+  var slideState = 0, slideAt = 0, slideManualAt = -1e9;
+  function drawSlide(){
+    var x=slideCv.getContext('2d'), w=1192, h=520, n=SLIDES.length, rows=Math.ceil(n/2), rh=(h-96)/rows, cw=(w-60)/2;
+    x.fillStyle='#0C0C10'; x.fillRect(0,0,w,h); x.textBaseline='middle';
+    x.textAlign='left'; x.fillStyle='#fff'; x.font='700 30px '+FONT; x.fillText('Projects', 30, 44);
+    x.textAlign='right'; x.fillStyle='#8E8E93'; x.font='600 19px '+FONT; x.fillText(n+' repositories on github.com/C-Sawe and shared team repositories', w-30, 46);
+    SLIDES.forEach(function(s,i){
+      var c=Math.floor(i/rows), r=i%rows, X=30+c*cw, Y=84+r*rh, on=i===slideState, b=s.book;
+      if (on){ x.fillStyle='#0A84FF'; rr(x,X-12,Y+3,cw-6,rh-6,10); x.fill(); }
+      x.textAlign='left'; x.fillStyle = on ? '#fff' : '#8E8E93'; x.font='600 18px '+FONT; x.fillText(b.call, X, Y+rh/2);
+      x.fillStyle='#fff'; x.font=(on ? '700 ' : '600 ')+'23px '+FONT; x.fillText(b.title, X+92, Y+rh/2);
+      x.textAlign='right'; x.fillStyle = on ? '#fff' : '#AEAEB2'; x.font='500 18px '+FONT; x.fillText((on ? '▸ ' : '')+b.status, X+cw-30, Y+rh/2);
+    });
+    slideTx.needsUpdate = true;
+  }
+  drawSlide();
+  var FLOWS = [['WhatsApp agent',['Message received','Intent read','Stock checked','Reply sent']],['Retraining loop',['Performance evaluated','Drift checked','Agent retrained','Promoted if better']]];
+  var autoStep = 0, autoAt = 0, autoLog = [];
+  function drawAuto(){
+    var x=autoCv.getContext('2d'), w=520, h=900, y=0;
+    x.fillStyle='#0C0C10'; x.fillRect(0,0,w,h); x.textBaseline='middle'; x.textAlign='left';
+    x.fillStyle='#fff'; x.font='700 34px '+FONT; x.fillText('Automations', 30, 58);
+    x.strokeStyle='#8E8E93'; x.lineWidth=2; rr(x,30,88,196,38,19); x.stroke();
+    x.fillStyle='#C7C7CC'; x.font='600 19px '+FONT; x.fillText('Example run, not live', 46, 108);
+    y=176;
+    FLOWS.forEach(function(fl, fi){
+      x.fillStyle='#8E8E93'; x.font='600 17px '+FONT; x.fillText(fl[0].toUpperCase(), 30, y); y+=40;
+      fl[1].forEach(function(name, si){
+        var idx=fi*4+si, done=idx<autoStep, now=idx===autoStep, cy=y+si*62;
+        if (si<3){ x.strokeStyle = done ? '#0A84FF' : '#3A3A3C'; x.lineWidth=3; x.beginPath(); x.moveTo(48,cy+16); x.lineTo(48,cy+46); x.stroke(); }
+        x.lineWidth=3; x.beginPath(); x.arc(48,cy,14,0,6.3);
+        if (done){ x.fillStyle='#0A84FF'; x.fill(); x.strokeStyle='#fff'; x.beginPath(); x.moveTo(41,cy); x.lineTo(46,cy+5); x.lineTo(55,cy-5); x.stroke(); }
+        else { x.strokeStyle = now ? '#0A84FF' : '#48484A'; x.stroke(); if (now){ x.fillStyle='#0A84FF'; x.beginPath(); x.arc(48,cy,6,0,6.3); x.fill(); } }
+        x.fillStyle = done || now ? '#fff' : '#8E8E93'; x.font=(now ? '700 ' : '500 ')+'23px '+FONT; x.fillText(name, 80, cy);
+        if (now){ x.fillStyle='#8E8E93'; x.font='500 17px '+FONT; x.textAlign='right'; x.fillText('running', w-30, cy); x.textAlign='left'; }
+      });
+      y+=4*62+26;
+    });
+    x.fillStyle='#8E8E93'; x.font='600 17px '+FONT; x.fillText('LOG', 30, y); y+=34;
+    x.font='500 18px ui-monospace,Menlo,Consolas,monospace';
+    autoLog.slice(-4).forEach(function(l,i){ x.fillStyle = i===Math.min(autoLog.length,4)-1 ? '#E5E5EA' : '#8E8E93'; x.fillText(l, 30, y+i*30); });
+    autoTx.needsUpdate = true;
+  }
+  function tickAuto(){
+    var d=new Date(), p=function(n){ return (n<10?'0':'')+n; }, f=Math.floor(autoStep/4), s=autoStep%4;
+    if (autoStep<8){ autoLog.push(p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+'  '+(f ? 'loop  ' : 'agent ')+FLOWS[f][1][s].toLowerCase()); if (autoLog.length>8) autoLog.shift(); }
+    autoStep = (autoStep+1) % 10;      /* steps 8 and 9 hold the finished run before it starts again */
+    drawAuto();
+  }
+  drawAuto();
+
+  /* ---------- state ---------- */
+  var active=null, hovered=null, view='room', onScreen=true, thinking=false;
+  var yaw=0, yawV=0, yawT=0, pitch=0, pitchV=0, pitchT=0, px=0, py=0, pxS=0, pyS=0;
+  var VIEWS = {room:{c:[.8,.55], w:20.8, h:10.6}, shelf:{c:[CASEX,.1], w:8.2, h:10.0}, desk:{c:[5.15,.75], w:9.6, h:5.4}};
+  var camTgt=new V3(), camTgtV=new V3(), camDist=30, camDistV=0, wantTgt=new V3(), wantDist=30, aspect=1;
+  var free={x0:0,x1:1,y0:0,y1:1}, R=8, readX=0, readY=0, t0=performance.now(), last=t0, running=false;
+  var tmpP=new V3(), readP=new V3(), readQ=new Q(), tgtP=new V3(), tgtQ=new Q();
+  var qa=new Q(), qb=new Q(), AX=new V3(1,0,0), AY=new V3(0,1,0), PULL=new V3(0,0,BD+.35), HOV=new V3(0,0,.32), OUT=new V3(0,0,.62);
+  var OPEN=-2.95;
+
+  function fitView(){
+    var v=VIEWS[view], w=v.w, cx=v.c[0];
+    if (view==='desk' && aspect<1){ w=5.0; cx=SCRX; }
+    wantTgt.set(cx, v.c[1], 0);
+    wantDist=Math.max(v.h/2/TV, w/2/(TV*aspect)) + 1.2;
+  }
+  function place(){
+    var fw=free.x1-free.x0, fh=free.y1-free.y0;
+    R=Math.max(8.4, 5.2/(2*TV*aspect*fw), 4.3/(2*TV*fh));
+    readX=((free.x0+free.x1)-1)*R*TV*aspect;
+    readY=(1-(free.y0+free.y1))*R*TV;
+  }
+  function resize(){
+    var w=stage.clientWidth, h=stage.clientHeight; if(!w||!h) return;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, w*h>1.3e6 ? 1.5 : 2));
+    renderer.setSize(w,h,false);
+    aspect=w/h; camera.aspect=aspect; camera.updateProjectionMatrix();
+    fitView(); place();
+  }
+  function applyTheme(){
+    var dark=isDark();
+    hemi.intensity = dark ? .2 : .82; hemi.color.set(dark ? 0x8fa3d6 : 0xfff6e6);
+    sun.intensity = dark ? .08 : .62; sun.color.set(dark ? 0x9db4ff : 0xffffff);
+    lanternLight.intensity = dark ? 1.7 : .3;
+    screenLight.intensity = dark ? .9 : 0;
+    moonLight.intensity = dark ? .7 : 0;
+    lanternPaper.color.copy(col(dark ? '#FFD68A' : '#FFE9B8'));
+    barGlow.material.color.copy(col(dark ? '#FFE2B0' : '#FFF3DD'));
+    scene.background = col(dark ? '#15130F' : '#D9CFB8');
+    skyTx.userData.redraw();
+  }
+  screenLight.position.set(SCRX+.6, SCRY, SCRZ+1.5);
+  moonLight.position.set(WINX, WINY, WALLZ+1.4);
+  function spring(cur,vel,target,k,c,dt){ vel += (-k*(cur-target)-c*vel)*dt; return [cur+vel*dt, vel]; }
+
+  function update(dt, time){
+    var still = reduceMQ.matches, r;
+    yawT = Math.max(-.32, Math.min(.32, yawT)); pitchT = Math.max(-.06, Math.min(.1, pitchT));
+    if (still){ yaw=yawT; pitch=pitchT; pxS=0; pyS=0; camTgt.copy(wantTgt); camDist=wantDist; }
+    else {
+      r=spring(yaw,yawV,yawT,300,30,dt); yaw=r[0]; yawV=r[1];
+      r=spring(pitch,pitchV,pitchT,300,30,dt); pitch=r[0]; pitchV=r[1];
+      var k=1-Math.exp(-6*dt); pxS+=(px-pxS)*k; pyS+=(py-pyS)*k;
+      tmpP.copy(camTgt).sub(wantTgt).multiplyScalar(-46).addScaledVector(camTgtV,-13.6);
+      camTgtV.addScaledVector(tmpP,dt); camTgt.addScaledVector(camTgtV,dt);
+      r=spring(camDist,camDistV,wantDist,46,13.6,dt); camDist=r[0]; camDistV=r[1];
+    }
+    var ya=yaw+pxS*.035, pa=pitch+.03-pyS*.012;
+    camera.position.set(camTgt.x+Math.sin(ya)*Math.cos(pa)*camDist, camTgt.y+Math.sin(pa)*camDist, camTgt.z+Math.cos(ya)*Math.cos(pa)*camDist);
+    camera.lookAt(camTgt); camera.updateMatrixWorld(true);
+
+    var bob = still ? 0 : Math.sin(time*1.3)*.035;
+    readP.set(readX+BD/2+.05, readY+bob, -R).applyMatrix4(camera.matrixWorld);
+    qa.setFromAxisAngle(AY, .2+pxS*.12); qb.setFromAxisAngle(AX, -.05+pyS*.07);
+    readQ.copy(camera.quaternion).multiply(qa).multiply(qb).multiply(qY90);
+
+    for (var i=0;i<BOOKS.length;i++){
+      var b=BOOKS[i], g=b.group3, want=(b===active), coverT=0;
+      if (want){
+        if (b.stage===0){ tgtP.copy(b.rest).add(PULL); tgtQ.copy(b.restQ); if (g.position.distanceTo(tgtP)<.18) b.stage=1; }
+        if (b.stage>=1){
+          tgtP.copy(readP); caseG.worldToLocal(tgtP); tgtQ.copy(readQ);
+          if (b.stage===1 && g.position.distanceTo(tgtP)<.3) b.stage=2;
+          if (b.stage===2) coverT=OPEN;
+        }
+      } else {
+        if (b.stage===2){ tgtP.copy(readP); caseG.worldToLocal(tgtP); tgtQ.copy(readQ); if (Math.abs(b.cover)<.25) b.stage=1; }
+        if (b.stage===1){ tgtP.copy(b.rest).add(PULL); tgtQ.copy(b.restQ); if (g.position.distanceTo(tgtP)<.2) b.stage=0; }
+        if (b.stage===0){ tgtP.copy(b.rest); if (b.pulled) tgtP.add(OUT); else if (b===hovered) tgtP.add(HOV); tgtQ.copy(b.restQ); }
+      }
+      if (still){
+        if (want){ b.stage=2; tgtP.copy(readP); caseG.worldToLocal(tgtP); tgtQ.copy(readQ); coverT=OPEN; }
+        else { b.stage=0; tgtP.copy(b.rest); if (b.pulled) tgtP.add(OUT); tgtQ.copy(b.restQ); coverT=0; }
+        g.position.copy(tgtP); g.quaternion.copy(tgtQ); b.cover=coverT; b.vel.set(0,0,0); b.coverV=0;
+      } else {
+        var atRest = b.stage===0 && !want, kk = atRest ? 300 : 70, cc = atRest ? 30 : 16.8;
+        tmpP.copy(g.position).sub(tgtP).multiplyScalar(-kk).addScaledVector(b.vel,-cc);
+        b.vel.addScaledVector(tmpP,dt); g.position.addScaledVector(b.vel,dt);
+        g.quaternion.slerp(tgtQ, 1-Math.exp(-8*dt));
+        var s=spring(b.cover,b.coverV,coverT,55,14.8,dt); b.cover=s[0]; b.coverV=s[1];
+      }
+      b.pivot.rotation.y=b.cover;
+    }
+    /* the things that run themselves */
+    if (!still){
+      if (SLIDES.length>1 && time-slideAt>5 && time-slideManualAt>12){ slideAt=time; goSlide(1, false); }
+      if (time-autoAt>1.15){ autoAt=time; tickAuto(); }
+      head.rotation.y += ((thinking ? Math.sin(time*5)*.25 : pxS*.5) - head.rotation.y)*Math.min(1,dt*6);
+      head.rotation.x += ((thinking ? -.15 : pyS*.2) - head.rotation.x)*Math.min(1,dt*6);
+      var blink = (time%4.2)<.12 ? .15 : 1; eyes[0].scale.y=eyes[1].scale.y=blink;
+      var pulse = thinking ? 1+.5*Math.abs(Math.sin(time*6)) : 1; tip.scale.set(pulse,pulse,pulse);
+      if (vacPause>0) vacPause-=dt;
+      cat.rotation.y += ((vacDir>0 ? Math.PI/2 : -Math.PI/2) - cat.rotation.y)*Math.min(1,dt*3); catHead.rotation.y=Math.sin(time*.9)*.5; catHead.rotation.z=Math.sin(time*1.7)*.08; catTail.rotation.z=Math.sin(time*3.2)*.45; cat.position.y=.2+Math.abs(Math.sin(time*7))*.012;
+      bubble.position.y=1.62+Math.sin(time*1.8)*.05;
+      if (vacPause>0){} else { vac.position.x += vacDir*1.1*dt; disc.rotation.y += dt*1.6; if (vac.position.x>9.2 || vac.position.x<-7.4){ vacDir*=-1; vacPause=1.4; vac.position.x=Math.max(-7.4,Math.min(9.2,vac.position.x)); } }
+    }
+  }
+  function frame(now){
+    if (!running) return;
+    requestAnimationFrame(frame);
+    var dt=Math.min((now-last)/1000,.3); last=now;
+    var n=Math.max(1,Math.ceil(dt/.02)), h=dt/n;
+    for (var i=0;i<n;i++) update(h,(now-t0)/1000);
+    renderer.render(scene,camera);
+  }
+  function setRunning(){
+    var on = !document.hidden;
+    if (on && !running){ running=true; last=performance.now(); requestAnimationFrame(frame); }
+    else if (!on) running=false;
+  }
+
+  /* pointer */
+  var ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), down=null, dragging=false;
+  var pickables = bookGroups.concat([screen, autoScreen, robot, vac, windowG, scrollK, scrollA, scrollB, scrollC]);
+  var KIND_CAPTION = {
+    screen:'The main monitor lists my projects. Pick it to step through them.',
+    auto:'The tall monitor replays an example run of a WhatsApp agent and a retraining loop. It is not live data.',
+    robot:'The desk robot. Pick it to ask about my work.',
+    vacuum:'The cat, riding the robot vacuum on its rounds.'
+  };
+  function pick(e){
+    var r=canvas.getBoundingClientRect();
+    ndc.set(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+    ray.setFromCamera(ndc,camera);
+    var hits=ray.intersectObjects(pickables,true); if(!hits.length) return null;
+    var o=hits[0].object;
+    while(o && !o.userData.book && !o.userData.kind && !o.userData.caption) o=o.parent;
+    return o || null;
+  }
+  function describe(o){
+    if (!o) return null;
+    if (o.userData.kind) return view==='desk' && o.userData.kind==='screen' ? 'Pick the screen for the next project.' : KIND_CAPTION[o.userData.kind];
+    return o.userData.caption || null;
+  }
+  function setHover(o){
+    var b = o && o.userData.book ? o.userData.book : null;
+    hovered=b;
+    canvas.classList.toggle('is-hot', !!(o && (o.userData.book || o.userData.kind==='screen' || o.userData.kind==='robot')));
+    if (activeId) return;
+    if (b) setCaption(b); else setCaption(null, describe(o));
+  }
+  canvas.addEventListener('pointerdown', function(e){
+    if (e.pointerType==='mouse' && e.button!==0) return;
+    down={x:e.clientX,y:e.clientY,yaw:yawT,pitch:pitchT,id:e.pointerId}; dragging=false;
+  });
+  canvas.addEventListener('pointermove', function(e){
+    var r=canvas.getBoundingClientRect();
+    px=((e.clientX-r.left)/r.width)*2-1; py=((e.clientY-r.top)/r.height)*2-1;
+    if (down && e.pointerId===down.id){
+      var dx=e.clientX-down.x, dy=e.clientY-down.y;
+      if (!dragging && Math.hypot(dx,dy)>7){
+        dragging=true; canvas.classList.add('is-drag'); setHover(null);
+        try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
+      }
+      if (dragging){ yawT=down.yaw-dx*.0028; pitchT=down.pitch+dy*.0012; }
+    } else if (e.pointerType==='mouse'){ setHover(pick(e)); }
+  });
+  function endPointer(e, cancelled){
+    if (!down || e.pointerId!==down.id) return;
+    var wasDrag=dragging; down=null; dragging=false; canvas.classList.remove('is-drag');
+    if (cancelled || wasDrag) return;
+    var o=pick(e), b=o && o.userData.book, kind=o && o.userData.kind;
+    if (b){ if (activeId===b.id) closeBook(); else openBook(b.id); }
+    else if (activeId) closeBook();
+    else if (kind==='screen'){ if (view==='desk') goSlide(1, true); else setView('desk'); }
+    else if (kind==='robot') openPanel('ask');
+    else if (o) setCaption(null, describe(o));
+  }
+  canvas.addEventListener('pointerup', function(e){ endPointer(e,false); });
+  canvas.addEventListener('pointercancel', function(e){ endPointer(e,true); });
+  canvas.addEventListener('pointerleave', function(){ px=0; py=0; setHover(null); });
+
+  /* lifecycle */
+  view = wideMQ.matches ? 'room' : 'shelf';
+  resize(); applyTheme(); camTgt.copy(wantTgt); camDist=wantDist;
+  window.addEventListener('resize', resize);
+  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(stage);
+  document.addEventListener('visibilitychange', setRunning);
+  new MutationObserver(applyTheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+  setInterval(function(){ skyTx.userData.redraw(); }, 300000);
+  setRunning();
+  return {
+    view: view,
+    setActive:function(id){ active = id ? byId[id] : null; },
+    setView:function(v){ if (VIEWS[v]){ view=v; yawT=0; pitchT=0; fitView(); } },
+    setFree:function(f){ free=f; place(); },
+    setPulled:function(ids){ BOOKS.forEach(function(b){ b.pulled = ids.indexOf(b.id)>=0; }); },
+    setThinking:function(v){ thinking=!!v; },
+    showSlide:function(i, manual){ slideState=i; if (manual) slideManualAt=(performance.now()-t0)/1000; drawSlide(); }
+  };
+}
+
+try { scene3d = initScene(); } catch(e){ scene3d = null; }
+if (!scene3d){ $('stage').classList.add('is-flat'); $('seg').hidden = true; setCaption(null, 'The 3D study is unavailable here. Open the Catalogue for every book.'); }
+else setView(scene3d.view);
+syncChrome();
+window.addEventListener('resize', syncChrome);
+
+/* ---------- start, keeping an open book across updates ---------- */
+function start(saved){
+  if (saved && saved.open && byId[saved.open] && !location.hash) openBook(saved.open,{quiet:true});
+  else route();
+}
+var hot = window.claude && window.claude.hot;
+if (hot && hot.snapshot) { try{ hot.snapshot(function(){ return {open:activeId}; }); }catch(e){} }
+if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
+})();
+</script>
+</body>
+</html>
